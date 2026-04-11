@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Channel — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="feed-page">
+
+<!-- App header -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item active">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<!-- Channel subheader -->
+<div class="feed-subheader">
+  <button class="back-btn" id="back-btn">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+    </svg>
+    Back
+  </button>
+  <div class="feed-channel-info">
+    <div class="feed-channel-name" id="ch-title">Loading...</div>
+    <div class="feed-channel-meta" id="ch-meta"></div>
+  </div>
+  <div class="lang-selector">
+    <label for="lang-select">Language:</label>
+    <select id="lang-select" class="lang-select"></select>
+  </div>
+  <button class="remove-channel-btn" id="remove-channel-btn" title="Remove channel and all its messages">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+    </svg>
+    Remove Channel
+  </button>
+</div>
+
+<!-- Selection toolbar (hidden until messages are checked) -->
+<div class="feed-select-bar" id="feed-select-bar" style="display:none">
+  <span id="feed-select-count">0 selected</span>
+  <button class="export-project-btn" id="export-project-btn">Export as PDF</button>
+  <button class="deselect-all-btn" id="deselect-all-btn">Deselect All</button>
+</div>
+
+<!-- Feed -->
+<div class="feed-body" id="feed-body">
+  <div class="spinner"></div>
+</div>
+
+<!-- Lightbox for full-size photos -->
+<div class="lightbox-overlay hidden" id="lightbox">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+'use strict';
+
+var LANGUAGES = [
+  { code: 'original', name: 'Original' },
+  { code: 'en',    name: 'English' },
+  { code: 'no',    name: 'Norwegian' },
+  { code: 'sv',    name: 'Swedish' },
+  { code: 'da',    name: 'Danish' },
+  { code: 'fi',    name: 'Finnish' },
+  { code: 'de',    name: 'German' },
+  { code: 'fr',    name: 'French' },
+  { code: 'es',    name: 'Spanish' },
+  { code: 'pt',    name: 'Portuguese' },
+  { code: 'it',    name: 'Italian' },
+  { code: 'nl',    name: 'Dutch' },
+  { code: 'pl',    name: 'Polish' },
+  { code: 'ru',    name: 'Russian' },
+  { code: 'uk',    name: 'Ukrainian' },
+  { code: 'tr',    name: 'Turkish' },
+  { code: 'ar',    name: 'Arabic' },
+  { code: 'zh-CN', name: 'Chinese' },
+  { code: 'ja',    name: 'Japanese' },
+  { code: 'ko',    name: 'Korean' },
+];
+
+var LANG_NAMES = {};
+LANGUAGES.forEach(function(l) { LANG_NAMES[l.code] = l.name; });
+
+var username    = decodeURIComponent(location.pathname.replace('/channel/', '').replace(/^\//, ''));
+var currentPage = 1;
+var totalPages  = 1;
+var currentLang = localStorage.getItem('tgs_lang') || 'en';
+var lastSeenMsgId = null;
+
+// ── Language selector ─────────────────────────────────────────────────────────
+var langSelect = document.getElementById('lang-select');
+LANGUAGES.forEach(function(l) {
+  var o = document.createElement('option');
+  o.value = l.code; o.textContent = l.name;
+  if (l.code === currentLang) o.selected = true;
+  langSelect.appendChild(o);
+});
+langSelect.addEventListener('change', function() {
+  currentLang = langSelect.value;
+  localStorage.setItem('tgs_lang', currentLang);
+  currentPage = 1;
+  clearFeed();
+  loadPage(1);
+});
+
+document.getElementById('back-btn').addEventListener('click', function() {
+  window.location.href = '/';
+});
+
+document.getElementById('remove-channel-btn').addEventListener('click', function() {
+  var title = document.getElementById('ch-title').textContent || username;
+  if (!confirm('Remove "' + title + '" and all its messages? This cannot be undone.')) return;
+  fetch('/api/channel/' + encodeURIComponent(username), { method: 'DELETE' })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function() { window.location.href = '/'; })
+    .catch(function(err) { alert('Failed to remove channel: ' + ((err && err.message) || 'Unknown error')); });
+});
+
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+var lightbox = document.getElementById('lightbox');
+var lightboxImg = document.getElementById('lightbox-img');
+lightbox.addEventListener('click', function() {
+  lightbox.classList.add('hidden');
+  lightboxImg.src = '';
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { lightbox.classList.add('hidden'); lightboxImg.src = ''; }
+});
+function openLightbox(src) {
+  lightboxImg.src = src;
+  lightbox.classList.remove('hidden');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtNum(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return n.toLocaleString();
+}
+
+function fmtDate(s) {
+  if (!s) return '';
+  var d = new Date(s.includes('Z') ? s : s+'Z');
+  return d.toLocaleDateString('en-US', {year:'numeric',month:'short',day:'numeric'}) +
+    ' \u00b7 ' + d.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+}
+
+function langName(code) {
+  return LANG_NAMES[code] || LANG_NAMES[(code||'').slice(0,2)] || (code||'').toUpperCase();
+}
+
+// Extract all http/https URLs from plain text
+function extractUrls(text) {
+  var re = /https?:\/\/[^\s\)\]\>"']+/g;
+  var matches = text.match(re) || [];
+  // trim trailing punctuation
+  matches = matches.map(function(u) { return u.replace(/[.,;:!?)"'\]]+$/, ''); });
+  // deduplicate
+  var seen = Object.create(null);
+  return matches.filter(function(u) {
+    if (seen[u]) return false;
+    seen[u] = true;
+    // only keep safe https/http URLs
+    try { var p = new URL(u); return p.protocol === 'https:' || p.protocol === 'http:'; }
+    catch (_) { return false; }
+  });
+}
+
+// Validate a URL is safe (http/https only)
+function safeUrl(url) {
+  try {
+    var p = new URL(url);
+    return (p.protocol === 'https:' || p.protocol === 'http:') ? url : null;
+  } catch (_) { return null; }
+}
+
+function safeTgUrl(url) {
+  try {
+    var p = new URL(url);
+    return (p.protocol === 'https:' && p.hostname === 't.me') ? url : null;
+  } catch (_) { return null; }
+}
+
+// Build a text node where https?:// URLs are <a> elements
+function textWithLinks(text) {
+  var frag = document.createDocumentFragment();
+  var re = /https?:\/\/[^\s\)\]\>"']+/g;
+  var last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    var rawUrl = m[0].replace(/[.,;:!?)"'\]]+$/, '');
+    var safe = safeUrl(rawUrl);
+    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    if (safe) {
+      var a = document.createElement('a');
+      a.href = safe; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = rawUrl;
+      frag.appendChild(a);
+    } else {
+      frag.appendChild(document.createTextNode(rawUrl));
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
+}
+
+function makeSvgIcon(paths, w, h) {
+  var ns = 'http://www.w3.org/2000/svg';
+  var s = document.createElementNS(ns,'svg');
+  s.setAttribute('width', w||14); s.setAttribute('height', h||14);
+  s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('fill','none');
+  s.setAttribute('stroke','currentColor'); s.setAttribute('stroke-width','2');
+  s.setAttribute('stroke-linecap','round'); s.setAttribute('stroke-linejoin','round');
+  paths.forEach(function(d) {
+    var p = document.createElementNS(ns, typeof d === 'string' ? 'path' : 'circle');
+    if (typeof d === 'string') p.setAttribute('d', d);
+    else { p.setAttribute('cx',d[0]); p.setAttribute('cy',d[1]); p.setAttribute('r',d[2]); }
+    s.appendChild(p);
+  });
+  return s;
+}
+
+// ── Selection state ───────────────────────────────────────────────────────────
+var _selected = {};
+
+function updateSelectBar() {
+  var ids = Object.keys(_selected);
+  var bar = document.getElementById('feed-select-bar');
+  bar.style.display = ids.length ? '' : 'none';
+  document.getElementById('feed-select-count').textContent =
+    ids.length + ' message' + (ids.length !== 1 ? 's' : '') + ' selected';
+}
+
+document.getElementById('deselect-all-btn').addEventListener('click', function() {
+  _selected = {};
+  document.querySelectorAll('.msg-checkbox').forEach(function(cb) { cb.checked = false; });
+  document.querySelectorAll('.msg-post').forEach(function(p) { p.classList.remove('msg-selected'); });
+  updateSelectBar();
+});
+
+document.getElementById('export-project-btn').addEventListener('click', function() {
+  var msgs = Object.keys(_selected).map(function(id) { return _selected[id]; });
+  if (!msgs.length) return;
+
+  if (!window.phasmExportHtmlToProject) {
+    alert('Open the Projects sidebar first via the Projects menu in the top bar.');
+    return;
+  }
+
+  var today = new Date().toISOString().slice(0, 10);
+  var channelTitle = document.getElementById('ch-title').textContent || username;
+  var sourceRef = today + '_' + username;
+  var html = buildPdfHtml(msgs, channelTitle, today);
+
+  window.phasmExportHtmlToProject(html, 'Telegram Scraper', sourceRef);
+
+  _selected = {};
+  document.querySelectorAll('.msg-checkbox').forEach(function(cb2) { cb2.checked = false; });
+  document.querySelectorAll('.msg-post').forEach(function(p) { p.classList.remove('msg-selected'); });
+  updateSelectBar();
+});
+
+// ── PDF export helpers ────────────────────────────────────────────────────────
+function escHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function textToLinkedHtml(text) {
+  if (!text) return '';
+  var re = /https?:\/\/[^\s\)\]\>"']+/g;
+  var result = '', last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    var raw = m[0].replace(/[.,;:!?)"'\]]+$/, '');
+    result += escHtml(text.slice(last, m.index));
+    result += '<a href="' + escHtml(raw) + '" target="_blank">' + escHtml(raw) + '</a>';
+    last = m.index + raw.length;
+  }
+  result += escHtml(text.slice(last));
+  return result.replace(/\n/g, '<br>');
+}
+
+function buildPdfHtml(messages, channelTitle, date) {
+  var rows = messages.map(function(m) {
+    var text = m.translated_text || m.text || '';
+    var ts = '';
+    try {
+      var d = new Date(m.date && m.date.includes('Z') ? m.date : (m.date || '') + 'Z');
+      ts = d.toLocaleString();
+    } catch(e) { ts = m.date || ''; }
+    var meta = ts;
+    if (m.views > 0)    meta += ' \u00b7 ' + fmtNum(m.views) + ' views';
+    if (m.forwards > 0) meta += ' \u00b7 ' + fmtNum(m.forwards) + ' forwards';
+
+    var imgHtml = '';
+    if (m.media_url && m.media_type === 'photo') {
+      var src = m.media_url.startsWith('/') ? location.origin + m.media_url : m.media_url;
+      imgHtml = '<div style="margin-top:10px"><img src="' + escHtml(src) +
+        '" style="max-width:100%;max-height:400px;border-radius:6px;display:block"></div>';
+    } else if (m.media_type && m.media_type !== 'webpage') {
+      var icons2 = { video: '\uD83C\uDFA5', audio: '\uD83C\uDFA7', document: '\uD83D\uDCCE' };
+      imgHtml = '<div style="margin-top:8px;font-size:12px;color:#888">' +
+        (icons2[m.media_type] || '\uD83D\uDCCB') + ' ' + escHtml(m.media_type) + '</div>';
+    }
+
+    var srcLink = '';
+    if (m.message_url) {
+      try {
+        var pu = new URL(m.message_url);
+        if (pu.protocol === 'https:' && pu.hostname === 't.me') {
+          srcLink = '<div style="margin-top:8px;font-size:11px">' +
+            '<a href="' + escHtml(m.message_url) + '" target="_blank" style="color:#1a73e8">' +
+            'View in Telegram \u2197</a></div>';
+        }
+      } catch(e2) {}
+    }
+
+    return '<div style="margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid #e8eaed">' +
+      '<div style="font-size:11px;color:#888;margin-bottom:8px">' + escHtml(meta) + '</div>' +
+      '<div style="font-size:13px;line-height:1.7">' + textToLinkedHtml(text) + '</div>' +
+      imgHtml + srcLink + '</div>';
+  }).join('');
+
+  var css = [
+    'body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 24px;color:#202124}',
+    'h1{font-size:22px;font-weight:700;margin-bottom:4px}',
+    '.sub{font-size:13px;color:#70757a;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #202124}',
+    'a{color:#1a73e8}',
+    '@media print{',
+      'body{margin:0}',
+      'img{page-break-inside:avoid}',
+      'div{page-break-inside:avoid}',
+    '}'
+  ].join('');
+
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
+    '<title>' + escHtml(channelTitle) + ' \u2014 ' + escHtml(date) + '</title>' +
+    '<style>' + css + '</style></head><body>' +
+    '<h1>' + escHtml(channelTitle) + '</h1>' +
+    '<div class="sub">Exported ' + escHtml(date) + ' \u00b7 ' + messages.length +
+      ' message' + (messages.length !== 1 ? 's' : '') + '</div>' +
+    rows + '</body></html>';
+}
+
+// ── Build one message post ─────────────────────────────────────────────────────
+function buildPost(m, isNew) {
+  var text    = m.translated_text || m.text || '';
+  var origText = m.text || '';
+  var urls    = extractUrls(origText);
+
+  var hasLinks  = urls.length > 0;
+  var post = document.createElement('div');
+  post.className = 'msg-post' + (hasLinks ? '' : ' no-links');
+
+  // ── Checkbox ───────────────────────────────────────────────────────────────
+  var cbWrap = document.createElement('div');
+  cbWrap.className = 'msg-cb-wrap';
+  var cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.className = 'msg-checkbox';
+  (function(msg, postEl) {
+    cb.addEventListener('change', function() {
+      if (cb.checked) {
+        _selected[msg.message_id] = msg;
+        postEl.classList.add('msg-selected');
+      } else {
+        delete _selected[msg.message_id];
+        postEl.classList.remove('msg-selected');
+      }
+      updateSelectBar();
+    });
+  }(m, post));
+  cbWrap.appendChild(cb);
+  // appended after grid children so it doesn't consume a grid cell
+
+  // ── Left column: main content ──────────────────────────────────────────────
+  var main = document.createElement('div');
+  main.className = 'msg-main';
+
+  // Top row: date, stats, NEW pill
+  var top = document.createElement('div');
+  top.className = 'msg-top';
+
+  var dateEl = document.createElement('span');
+  dateEl.className = 'msg-date';
+  dateEl.textContent = fmtDate(m.date);
+  top.appendChild(dateEl);
+
+  if (isNew) {
+    var newPill = document.createElement('span');
+    newPill.className = 'msg-new-pill';
+    newPill.textContent = 'NEW';
+    top.appendChild(newPill);
+  }
+
+  var statsRow = document.createElement('div');
+  statsRow.className = 'msg-stat-row';
+  if (m.views > 0) {
+    var vs = document.createElement('span'); vs.className = 'msg-stat-item';
+    vs.appendChild(makeSvgIcon(['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z', [12,12,3]], 12, 12));
+    vs.appendChild(document.createTextNode(' ' + fmtNum(m.views)));
+    statsRow.appendChild(vs);
+  }
+  if (m.forwards > 0) {
+    var fs = document.createElement('span'); fs.className = 'msg-stat-item';
+    fs.textContent = '\u21AA ' + fmtNum(m.forwards);
+    statsRow.appendChild(fs);
+  }
+  top.appendChild(statsRow);
+  main.appendChild(top);
+
+  // Message text
+  if (text) {
+    var bodyEl = document.createElement('div');
+    bodyEl.className = 'msg-body';
+    bodyEl.appendChild(textWithLinks(text));
+    main.appendChild(bodyEl);
+  }
+
+  // Translation block (show original below translated)
+  if (m.translated_text && m.translated_text !== m.text && m.text) {
+    var trans = document.createElement('div');
+    trans.className = 'msg-trans';
+    var tLabel = document.createElement('div'); tLabel.className = 'msg-trans-label';
+    tLabel.textContent = 'Original' + (m.source_lang ? ' \u2014 ' + langName(m.source_lang) : '') + ':';
+    var tText = document.createElement('div'); tText.className = 'msg-trans-text';
+    tText.appendChild(textWithLinks(m.text));
+    trans.appendChild(tLabel); trans.appendChild(tText);
+    main.appendChild(trans);
+  }
+
+  // Media
+  var mediaWrap = document.createElement('div');
+  mediaWrap.className = 'msg-media';
+  var mediaRendered = false;
+
+  if (m.media_url) {
+    var safeMedia = safeUrl(m.media_url.startsWith('/') ? location.origin + m.media_url : m.media_url);
+    if (safeMedia && m.media_type === 'photo') {
+      var img = document.createElement('img');
+      img.className = 'msg-photo';
+      img.src = safeMedia;
+      img.alt = 'Photo';
+      img.loading = 'lazy';
+      img.addEventListener('click', function() { openLightbox(safeMedia); });
+      mediaWrap.appendChild(img);
+      mediaRendered = true;
+    } else if (safeMedia && m.media_type === 'video') {
+      var vid = document.createElement('video');
+      vid.className = 'msg-video';
+      vid.controls = true;
+      vid.preload = 'metadata';
+      var src = document.createElement('source');
+      src.src = safeMedia;
+      vid.appendChild(src);
+      mediaWrap.appendChild(vid);
+      mediaRendered = true;
+    }
+  }
+
+  if (!mediaRendered && m.media_type && m.media_type !== 'webpage') {
+    var stub = document.createElement('div');
+    stub.className = 'msg-media-stub';
+    var icons = {
+      photo:    '\uD83D\uDDBC\uFE0F',
+      video:    '\uD83C\uDFA5',
+      audio:    '\uD83C\uDFA7',
+      document: '\uD83D\uDCCE',
+      other:    '\uD83D\uDCCB',
+    };
+    stub.appendChild(document.createTextNode((icons[m.media_type] || '\uD83D\uDCCB') + ' ' + m.media_type.charAt(0).toUpperCase() + m.media_type.slice(1)));
+    var tgUrl2 = safeTgUrl(m.message_url);
+    if (tgUrl2) {
+      stub.appendChild(document.createTextNode(' \u2014 '));
+      var stubA = document.createElement('a');
+      stubA.href = tgUrl2; stubA.target = '_blank'; stubA.rel = 'noopener noreferrer';
+      stubA.textContent = 'View in Telegram';
+      stub.appendChild(stubA);
+    }
+    mediaWrap.appendChild(stub);
+    mediaRendered = true;
+  }
+
+  if (mediaRendered) main.appendChild(mediaWrap);
+
+  // "View in Telegram" footer link
+  var tgUrl = safeTgUrl(m.message_url);
+  if (tgUrl) {
+    var tgLink = document.createElement('a');
+    tgLink.className = 'msg-tg-link';
+    tgLink.href = tgUrl; tgLink.target = '_blank'; tgLink.rel = 'noopener noreferrer';
+    tgLink.appendChild(makeSvgIcon(['M21.99 4.22a2 2 0 0 0-2.75-.86L2.4 12.84a1 1 0 0 0 .1 1.83l4.57 1.57 2.1 6.3a1 1 0 0 0 1.77.24l2.74-3.65 5.3 3.93a1 1 0 0 0 1.55-.7l2.48-17a2 2 0 0 0-.02-.14z'], 14, 14));
+    var tgSpan = document.createElement('span'); tgSpan.textContent = 'View in Telegram';
+    tgLink.appendChild(tgSpan);
+    main.appendChild(tgLink);
+  }
+
+  post.appendChild(main);
+
+  // ── Right column: links panel ──────────────────────────────────────────────
+  if (hasLinks) {
+    var linksPanel = document.createElement('div');
+    linksPanel.className = 'msg-links-panel';
+
+    var lt = document.createElement('div'); lt.className = 'msg-links-title';
+    lt.textContent = 'Links';
+    linksPanel.appendChild(lt);
+
+    urls.forEach(function(url) {
+      var entry = document.createElement('div'); entry.className = 'msg-link-entry';
+      var bullet = document.createElement('span'); bullet.className = 'msg-link-bullet';
+      bullet.textContent = '\u2192';
+      var a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      entry.appendChild(bullet); entry.appendChild(a);
+      linksPanel.appendChild(entry);
+    });
+    post.appendChild(linksPanel);
+  }
+
+  // Checkbox is absolutely positioned — append last so it doesn't affect grid
+  post.appendChild(cbWrap);
+
+  return post;
+}
+
+// ── Feed management ───────────────────────────────────────────────────────────
+function clearFeed() {
+  var f = document.getElementById('feed-body');
+  while (f.firstChild) f.removeChild(f.firstChild);
+}
+
+function setHeader(info) {
+  document.getElementById('ch-title').textContent = info.title || username;
+  document.title = (info.title || username) + ' \u2014 OSIntelligence Toolkit';
+  var meta = [];
+  if (info.username) meta.push('@' + info.username);
+  if (info.subscribers) meta.push(fmtNum(info.subscribers) + ' subscribers');
+  if (info.message_count) meta.push(fmtNum(info.message_count) + ' messages');
+  document.getElementById('ch-meta').textContent = meta.join('  \u00b7  ');
+}
+
+function loadPage(page) {
+  var feed = document.getElementById('feed-body');
+
+  var notice = document.createElement('div');
+  notice.className = 'translating-notice';
+  if (currentLang !== 'original' && currentLang !== 'en') {
+    var sp = document.createElement('div'); sp.className = 'mini-spin';
+    notice.appendChild(sp);
+    notice.appendChild(document.createTextNode('Translating to ' + (LANG_NAMES[currentLang]||currentLang) + '...'));
+  } else {
+    var sp2 = document.createElement('div'); sp2.className = 'spinner'; sp2.style.margin = '20px auto';
+    notice.appendChild(sp2);
+  }
+  feed.appendChild(notice);
+
+  var url = '/api/channel/' + encodeURIComponent(username) +
+            '/messages?page=' + page + '&lang=' + encodeURIComponent(currentLang);
+
+  fetch(url)
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data) {
+      if (notice.parentNode) notice.parentNode.removeChild(notice);
+
+      setHeader(data.channel);
+      totalPages  = data.pages;
+      currentPage = data.page;
+
+      if (page === 1) {
+        try {
+          var raw = localStorage.getItem('tgs_seen_' + username);
+          lastSeenMsgId = raw ? JSON.parse(raw).lastMsgId : null;
+        } catch (e) { lastSeenMsgId = null; }
+      }
+
+      var newestId = data.messages.length > 0 ? data.messages[0].message_id : null;
+      var hasNew = page === 1 && lastSeenMsgId !== null &&
+                   data.messages.some(function(m) { return m.message_id > lastSeenMsgId; });
+
+      if (hasNew) {
+        var nd = document.createElement('div'); nd.className = 'new-divider';
+        nd.textContent = 'New messages';
+        feed.appendChild(nd);
+      }
+
+      data.messages.forEach(function(m, idx) {
+        var isNew = (lastSeenMsgId !== null && m.message_id > lastSeenMsgId);
+        if (idx > 0) {
+          var hr = document.createElement('hr');
+          hr.className = 'msg-sep';
+          feed.appendChild(hr);
+        }
+        feed.appendChild(buildPost(m, isNew));
+      });
+
+      if (page === 1 && newestId !== null) {
+        try {
+          localStorage.setItem('tgs_seen_' + username, JSON.stringify({
+            lastMsgId: newestId,
+            count: data.channel.message_count,
+            ts: Date.now()
+          }));
+        } catch (e) {}
+      }
+
+      if (currentPage < totalPages) {
+        var btn = document.createElement('button');
+        btn.className = 'load-more-btn';
+        btn.textContent = 'Load older messages';
+        btn.addEventListener('click', function() {
+          btn.remove();
+          // add separator before older messages
+          var hr2 = document.createElement('hr'); hr2.className = 'msg-sep';
+          feed.appendChild(hr2);
+          loadPage(currentPage + 1);
+        });
+        feed.appendChild(btn);
+      } else if (data.total > 0) {
+        var end = document.createElement('div');
+        end.style.cssText = 'text-align:center;padding:24px;font-size:13px;color:#70757a';
+        end.textContent = 'All ' + fmtNum(data.total) + ' messages loaded';
+        feed.appendChild(end);
+      }
+    })
+    .catch(function(err) {
+      if (notice.parentNode) notice.parentNode.removeChild(notice);
+      var e = document.createElement('div'); e.className = 'empty-state';
+      var h2 = document.createElement('h2'); h2.textContent = 'Could not load messages';
+      var p = document.createElement('p'); p.textContent = (err&&err.message)||'Unknown error';
+      e.appendChild(h2); e.appendChild(p);
+      feed.appendChild(e);
+    });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+if (!username) {
+  window.location.href = '/';
+} else {
+  clearFeed();
+  loadPage(1);
+}
+</script>
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">❮</button>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>

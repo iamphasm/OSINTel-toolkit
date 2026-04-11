@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Indexed Channels — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- App header -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item active">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<div class="channels-page">
+  <h1>Indexed Channels</h1>
+  <p class="sub">All public Telegram channels currently indexed and searchable.</p>
+  <div id="channels-container"><div class="spinner"></div></div>
+</div>
+
+<script>
+'use strict';
+
+function formatNumber(n) {
+  if (!n) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+
+function safeTelegramUrl(url) {
+  if (!url) return null;
+  try {
+    var u = new URL(url);
+    if (u.protocol === 'https:' && u.hostname === 't.me') return url;
+  } catch (_) {}
+  return null;
+}
+
+function buildChannelCard(ch) {
+  var card = document.createElement('div');
+  card.className = 'channel-card';
+
+  var iconEl = document.createElement('div');
+  iconEl.className = 'ch-icon';
+  iconEl.textContent = (ch.title || '?')[0].toUpperCase();
+  card.appendChild(iconEl);
+
+  var body = document.createElement('div');
+  body.className = 'ch-body';
+
+  var titleEl = document.createElement('div');
+  titleEl.className = 'ch-title';
+  var chanUrl = safeTelegramUrl(ch.channel_url);
+  if (chanUrl) {
+    var a = document.createElement('a');
+    a.href = chanUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = ch.title || '';
+    titleEl.appendChild(a);
+  } else {
+    titleEl.textContent = ch.title || '';
+  }
+  body.appendChild(titleEl);
+
+  var handleEl = document.createElement('div');
+  handleEl.className = 'ch-handle';
+  handleEl.textContent = ch.username ? '@' + ch.username : '';
+  body.appendChild(handleEl);
+
+  if (ch.description) {
+    var descEl = document.createElement('div');
+    descEl.className = 'ch-desc';
+    descEl.textContent = ch.description.slice(0, 200) + (ch.description.length > 200 ? '...' : '');
+    body.appendChild(descEl);
+  }
+
+  var statsEl = document.createElement('div');
+  statsEl.className = 'ch-stats';
+
+  var subsSpan = document.createElement('span');
+  subsSpan.textContent = formatNumber(ch.subscribers) + ' subscribers';
+  statsEl.appendChild(subsSpan);
+
+  var msgSpan = document.createElement('span');
+  msgSpan.textContent = formatNumber(ch.message_count) + ' messages indexed';
+  statsEl.appendChild(msgSpan);
+
+  if (ch.last_scraped) {
+    var scrapedSpan = document.createElement('span');
+    var d = new Date(ch.last_scraped.includes('Z') ? ch.last_scraped : ch.last_scraped + 'Z');
+    scrapedSpan.textContent = 'Last updated ' + d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    statsEl.appendChild(scrapedSpan);
+  }
+
+  body.appendChild(statsEl);
+
+  // Search this channel button
+  if (ch.username) {
+    var searchLink = document.createElement('a');
+    searchLink.href = '/results?q=&channel=' + encodeURIComponent(ch.username) + '&sort=date';
+    searchLink.style.cssText = 'display:inline-block;margin-top:10px;font-size:13px;color:#1a73e8';
+    searchLink.textContent = 'Browse messages from this channel';
+    body.appendChild(searchLink);
+  }
+
+  card.appendChild(body);
+  return card;
+}
+
+fetch('/api/channels')
+  .then(function(r) { return r.json(); })
+  .then(function(channels) {
+    var container = document.getElementById('channels-container');
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    if (!channels || channels.length === 0) {
+      var msg = document.createElement('div');
+      msg.className = 'empty-state';
+      var h2 = document.createElement('h2');
+      h2.textContent = 'No channels indexed yet';
+      var p = document.createElement('p');
+      p.textContent = 'Use the scraper to add channels: python scraper.py add @channelname';
+      msg.appendChild(h2);
+      msg.appendChild(p);
+      container.appendChild(msg);
+      return;
+    }
+
+    channels.forEach(function(ch) {
+      container.appendChild(buildChannelCard(ch));
+    });
+  })
+  .catch(function(err) {
+    var container = document.getElementById('channels-container');
+    while (container.firstChild) container.removeChild(container.firstChild);
+    var msg = document.createElement('div');
+    msg.className = 'empty-state';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Failed to load channels';
+    var p = document.createElement('p');
+    p.textContent = (err && err.message) || 'Unknown error';
+    msg.appendChild(h2);
+    msg.appendChild(p);
+    container.appendChild(msg);
+  });
+</script>
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">❯</button>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>

@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Link Scraper — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="wl-page">
+
+<!-- App header -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item active">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<!-- Page body -->
+<div class="wl-body">
+
+  <!-- Input panel -->
+  <div class="wl-input-panel">
+    <div class="wl-input-row">
+      <input id="wl-url" type="url" class="wl-url-input" placeholder="https://example.com" autocomplete="off">
+      <button id="wl-go-btn" class="wl-go-btn">Extract Links</button>
+    </div>
+    <div class="wl-options-row">
+      <label class="wl-toggle-label">
+        <input type="checkbox" id="wl-deep"> Deep scrape
+        <span class="wl-hint">(visits each link to fetch title &amp; description — first 50)</span>
+      </label>
+      <input id="wl-selector" type="text" class="wl-selector-input" placeholder="CSS selector (optional, e.g. h1, .price)">
+    </div>
+    <div class="wl-exclude-row">
+      <label class="wl-exclude-label" for="wl-exclude">Exclude domains:</label>
+      <input id="wl-exclude" type="text" class="wl-exclude-input" placeholder="e.g. google.com, facebook.com, t.co" autocomplete="off">
+    </div>
+  </div>
+
+  <!-- Status / progress -->
+  <div class="wl-status" id="wl-status" style="display:none">
+    <div class="mini-spin" id="wl-spin"></div>
+    <span id="wl-status-text">Fetching...</span>
+  </div>
+
+  <!-- Toolbar (shown after results) -->
+  <div class="wl-toolbar" id="wl-toolbar" style="display:none">
+    <div class="wl-toolbar-left">
+      <span class="wl-result-count" id="wl-result-count"></span>
+      <select id="wl-tld-filter" class="wl-tld-filter">
+        <option value="">All TLDs</option>
+      </select>
+    </div>
+    <div class="wl-toolbar-right">
+      <button id="wl-csv-btn" class="wl-action-btn">Export CSV</button>
+      <button id="wl-pdf-btn" class="wl-action-btn wl-pdf-btn">Export PDF</button>
+      <button id="wl-clear-btn" class="wl-action-btn wl-clear-btn">Clear</button>
+    </div>
+  </div>
+
+  <!-- Results table -->
+  <div class="wl-table-wrap" id="wl-table-wrap" style="display:none">
+    <table class="wl-table">
+      <thead>
+        <tr>
+          <th class="wl-th sortable" data-col="text">Link Text <span class="sort-arrow"></span></th>
+          <th class="wl-th sortable" data-col="url">URL <span class="sort-arrow"></span></th>
+          <th class="wl-th sortable" data-col="tld">TLD <span class="sort-arrow"></span></th>
+          <th class="wl-th sortable wl-th-title" data-col="title">Page Title <span class="sort-arrow"></span></th>
+          <th class="wl-th wl-th-desc">Description</th>
+          <th class="wl-th wl-th-sel" id="wl-sel-header" style="display:none">Selector Data</th>
+        </tr>
+      </thead>
+      <tbody id="wl-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- PDF column picker modal -->
+<div class="modal-overlay hidden" id="pdf-modal">
+  <div class="modal-box">
+    <div class="modal-title">Export PDF — choose columns</div>
+    <div class="wl-csv-checks" id="pdf-checks"></div>
+    <div class="modal-actions">
+      <button id="pdf-cancel-btn" class="btn-secondary">Cancel</button>
+      <button id="pdf-confirm-btn" class="btn-primary">Open PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- CSV column picker modal -->
+<div class="modal-overlay hidden" id="csv-modal">
+  <div class="modal-box">
+    <div class="modal-title">Export CSV — choose columns</div>
+    <div class="wl-csv-checks" id="csv-checks"></div>
+    <div class="modal-actions">
+      <button id="csv-cancel-btn" class="btn-secondary">Cancel</button>
+      <button id="csv-confirm-btn" class="btn-primary">Download</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+var allLinks    = [];
+var filtered    = [];
+var sortCol     = '';
+var sortDir     = 1;
+var tldFilter   = '';
+var deepMode    = false;
+var selectorVal = '';
+var excludeDomains = [];
+
+var ALL_COLS = [
+  { key: 'text',          label: 'Link Text' },
+  { key: 'url',           label: 'URL' },
+  { key: 'tld',           label: 'TLD' },
+  { key: 'title',         label: 'Page Title' },
+  { key: 'description',   label: 'Description' },
+  { key: 'selector_data', label: 'Selector Data' },
+  { key: 'is_duplicate',  label: 'Duplicate' },
+];
+
+var urlInput    = document.getElementById('wl-url');
+var excludeInput = document.getElementById('wl-exclude');
+var goBtn      = document.getElementById('wl-go-btn');
+var deepCheck  = document.getElementById('wl-deep');
+var selInput   = document.getElementById('wl-selector');
+var statusEl   = document.getElementById('wl-status');
+var statusText = document.getElementById('wl-status-text');
+var spinEl     = document.getElementById('wl-spin');
+var toolbar    = document.getElementById('wl-toolbar');
+var tableWrap  = document.getElementById('wl-table-wrap');
+var tbody      = document.getElementById('wl-tbody');
+var countEl    = document.getElementById('wl-result-count');
+var tldSel     = document.getElementById('wl-tld-filter');
+var csvBtn     = document.getElementById('wl-csv-btn');
+var clearBtn   = document.getElementById('wl-clear-btn');
+var selHeader  = document.getElementById('wl-sel-header');
+
+var csvModal      = document.getElementById('csv-modal');
+var csvChecks     = document.getElementById('csv-checks');
+var csvCancelBtn  = document.getElementById('csv-cancel-btn');
+var csvConfirmBtn = document.getElementById('csv-confirm-btn');
+
+var pdfBtn        = document.getElementById('wl-pdf-btn');
+var pdfModal      = document.getElementById('pdf-modal');
+var pdfChecks     = document.getElementById('pdf-checks');
+var pdfCancelBtn  = document.getElementById('pdf-cancel-btn');
+var pdfConfirmBtn = document.getElementById('pdf-confirm-btn');
+
+// ── Sorting ────────────────────────────────────────────────────────────────
+document.querySelectorAll('.wl-th.sortable').forEach(function(th) {
+  th.addEventListener('click', function() {
+    var col = th.dataset.col;
+    if (sortCol === col) { sortDir = -sortDir; } else { sortCol = col; sortDir = 1; }
+    document.querySelectorAll('.wl-th.sortable').forEach(function(h) {
+      h.querySelector('.sort-arrow').textContent = '';
+      h.classList.remove('sort-asc', 'sort-desc');
+    });
+    th.querySelector('.sort-arrow').textContent = sortDir === 1 ? ' ▲' : ' ▼';
+    th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    renderTable();
+  });
+});
+
+// ── TLD filter ─────────────────────────────────────────────────────────────
+tldSel.addEventListener('change', function() {
+  tldFilter = tldSel.value;
+  renderTable();
+});
+
+// ── Auto-exclude rules ─────────────────────────────────────────────────────
+var AUTO_EXCLUDE_RULES = [
+  {
+    match: function(host) { return host === 'github.com' || host.endsWith('.github.com'); },
+    domains: 'github.com, github.blog, githubstatus.com, github.community'
+  }
+];
+
+urlInput.addEventListener('input', function() {
+  try {
+    var host = new URL(urlInput.value.trim()).hostname.toLowerCase();
+    var rule = AUTO_EXCLUDE_RULES.find(function(r) { return r.match(host); });
+    if (rule && !excludeInput.dataset.userEdited) {
+      excludeInput.value = rule.domains;
+      parseExcludeDomains();
+    } else if (!rule && !excludeInput.dataset.userEdited) {
+      excludeInput.value = '';
+      parseExcludeDomains();
+    }
+  } catch(e) {}
+});
+
+// ── Domain exclusion filter ────────────────────────────────────────────────
+excludeInput.addEventListener('input', function() {
+  excludeInput.dataset.userEdited = excludeInput.value ? '1' : '';
+  parseExcludeDomains();
+  if (allLinks.length) renderTable();
+});
+
+function parseExcludeDomains() {
+  excludeDomains = excludeInput.value.split(',')
+    .map(function(d) { return d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''); })
+    .filter(Boolean);
+}
+
+function isDomainExcluded(url) {
+  if (!excludeDomains.length) return false;
+  try {
+    var host = new URL(url).hostname.toLowerCase();
+    return excludeDomains.some(function(d) {
+      return host === d || host.endsWith('.' + d);
+    });
+  } catch(e) { return false; }
+}
+
+// ── Extract ────────────────────────────────────────────────────────────────
+goBtn.addEventListener('click', doExtract);
+urlInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') doExtract(); });
+
+function doExtract() {
+  var url = urlInput.value.trim();
+  if (!url) { urlInput.focus(); return; }
+  deepMode    = deepCheck.checked;
+  selectorVal = selInput.value.trim();
+
+  allLinks = []; filtered = [];
+  setLoading(true);
+  hideResults();
+
+  fetch('/api/weblinks/extract', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url, deep_scrape: deepMode, selector: selectorVal })
+  })
+  .then(function(r) {
+    if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || 'HTTP ' + r.status); });
+    return r.json();
+  })
+  .then(function(data) {
+    setLoading(false);
+    allLinks = data.links || [];
+    buildTldFilter();
+    tldFilter = ''; tldSel.value = '';
+    sortCol = ''; sortDir = 1;
+    document.querySelectorAll('.wl-th.sortable').forEach(function(h) {
+      h.querySelector('.sort-arrow').textContent = '';
+      h.classList.remove('sort-asc', 'sort-desc');
+    });
+    selHeader.style.display = selectorVal ? '' : 'none';
+    renderTable();
+    toolbar.style.display = '';
+    tableWrap.style.display = '';
+  })
+  .catch(function(err) {
+    setLoading(false);
+    showError(err.message || 'Unknown error');
+  });
+}
+
+function setLoading(on) {
+  goBtn.disabled = on;
+  goBtn.textContent = on ? 'Extracting...' : 'Extract Links';
+  statusEl.style.display = on ? 'flex' : 'none';
+  statusText.textContent = deepMode ? 'Fetching links + deep scraping...' : 'Fetching links...';
+}
+
+function hideResults() {
+  toolbar.style.display = 'none';
+  tableWrap.style.display = 'none';
+  tbody.textContent = '';
+}
+
+function showError(msg) {
+  toolbar.style.display = 'none';
+  tableWrap.style.display = 'none';
+  statusEl.style.display = 'flex';
+  spinEl.style.display = 'none';
+  statusText.textContent = 'Error: ' + msg;
+}
+
+// ── TLD dropdown ───────────────────────────────────────────────────────────
+function buildTldFilter() {
+  var tlds = {};
+  allLinks.forEach(function(l) { if (l.tld) tlds[l.tld] = (tlds[l.tld] || 0) + 1; });
+  while (tldSel.options.length > 1) tldSel.remove(1);
+  Object.keys(tlds).sort().forEach(function(t) {
+    var o = document.createElement('option');
+    o.value = t; o.textContent = t + ' (' + tlds[t] + ')';
+    tldSel.appendChild(o);
+  });
+}
+
+// ── Render table ───────────────────────────────────────────────────────────
+function renderTable() {
+  filtered = allLinks.filter(function(l) {
+    if (tldFilter && l.tld !== tldFilter) return false;
+    if (isDomainExcluded(l.url)) return false;
+    return true;
+  });
+
+  if (sortCol) {
+    filtered.sort(function(a, b) {
+      var av = (a[sortCol] || '').toString().toLowerCase();
+      var bv = (b[sortCol] || '').toString().toLowerCase();
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    });
+  }
+
+  var dupCount = filtered.filter(function(l) { return l.is_duplicate; }).length;
+  countEl.textContent = filtered.length + (tldFilter ? ' / ' + allLinks.length : '') +
+    ' link' + (allLinks.length !== 1 ? 's' : '') +
+    (dupCount ? '  \u00b7  ' + dupCount + ' duplicate' + (dupCount !== 1 ? 's' : '') : '');
+
+  tbody.textContent = '';
+  filtered.forEach(function(link) {
+    var tr = document.createElement('tr');
+    if (link.is_duplicate) tr.classList.add('wl-dup');
+
+    var tdText = document.createElement('td');
+    tdText.className = 'wl-td wl-td-text';
+    tdText.textContent = link.text || '(no text)';
+    tr.appendChild(tdText);
+
+    var tdUrl = document.createElement('td');
+    tdUrl.className = 'wl-td wl-td-url';
+    var a = document.createElement('a');
+    var safe = safeUrl(link.url);
+    if (safe) { a.href = safe; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    a.textContent = link.url;
+    tdUrl.appendChild(a);
+    if (safe) {
+      var ico = document.createElement('span');
+      ico.className = 'wl-ext-ico'; ico.textContent = ' \u2197';
+      tdUrl.appendChild(ico);
+    }
+    tr.appendChild(tdUrl);
+
+    var tdTld = document.createElement('td');
+    tdTld.className = 'wl-td wl-td-tld';
+    tdTld.textContent = link.tld || '';
+    tr.appendChild(tdTld);
+
+    var tdTitle = document.createElement('td');
+    tdTitle.className = 'wl-td wl-td-title';
+    tdTitle.textContent = link.title || '';
+    tr.appendChild(tdTitle);
+
+    var tdDesc = document.createElement('td');
+    tdDesc.className = 'wl-td wl-td-desc';
+    tdDesc.textContent = link.description || '';
+    tr.appendChild(tdDesc);
+
+    var tdSel = document.createElement('td');
+    tdSel.className = 'wl-td wl-td-sel';
+    tdSel.style.display = selectorVal ? '' : 'none';
+    tdSel.textContent = link.selector_data || '';
+    tr.appendChild(tdSel);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function safeUrl(url) {
+  try {
+    var p = new URL(url);
+    return (p.protocol === 'https:' || p.protocol === 'http:') ? url : null;
+  } catch (_) { return null; }
+}
+
+// ── CSV column picker modal ────────────────────────────────────────────────
+csvBtn.addEventListener('click', function() {
+  if (!filtered.length) return;
+
+  // Build checkbox list — show selector_data only if a selector was used
+  csvChecks.textContent = '';
+  ALL_COLS.forEach(function(col) {
+    if (col.key === 'selector_data' && !selectorVal) return;
+    var lbl = document.createElement('label');
+    lbl.className = 'wl-check-label';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = col.key;
+    cb.checked = (col.key !== 'is_duplicate'); // all on by default except duplicate flag
+    cb.className = 'wl-field-cb';
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' ' + col.label));
+    csvChecks.appendChild(lbl);
+  });
+
+  csvModal.classList.remove('hidden');
+});
+
+csvCancelBtn.addEventListener('click', function() {
+  csvModal.classList.add('hidden');
+});
+csvModal.addEventListener('click', function(e) {
+  if (e.target === csvModal) csvModal.classList.add('hidden');
+});
+
+csvConfirmBtn.addEventListener('click', function() {
+  var cols = [];
+  csvChecks.querySelectorAll('.wl-field-cb:checked').forEach(function(cb) {
+    cols.push(cb.value);
+  });
+  if (!cols.length) return;
+  csvModal.classList.add('hidden');
+  downloadCsv(cols);
+});
+
+function downloadCsv(cols) {
+  var header = cols.map(function(c) {
+    var found = ALL_COLS.find(function(x) { return x.key === c; });
+    return csvCell(found ? found.label : c);
+  }).join(',');
+
+  var rows = filtered.map(function(l) {
+    return cols.map(function(c) { return csvCell(l[c] != null ? String(l[c]) : ''); }).join(',');
+  });
+
+  var csv = [header].concat(rows).join('\r\n');
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var burl = URL.createObjectURL(blob);
+  var lnk = document.createElement('a');
+  lnk.href = burl; lnk.download = 'weblinks.csv';
+  document.body.appendChild(lnk); lnk.click();
+  document.body.removeChild(lnk); URL.revokeObjectURL(burl);
+}
+
+function csvCell(v) {
+  var s = String(v == null ? '' : v);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+// ── PDF column picker modal ───────────────────────────────────────────────
+pdfBtn.addEventListener('click', function() {
+  if (!filtered.length) return;
+  pdfChecks.textContent = '';
+  ALL_COLS.forEach(function(col) {
+    if (col.key === 'selector_data' && !selectorVal) return;
+    var lbl = document.createElement('label');
+    lbl.className = 'wl-check-label';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = col.key;
+    cb.checked = (col.key !== 'is_duplicate');
+    cb.className = 'wl-field-cb';
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' ' + col.label));
+    pdfChecks.appendChild(lbl);
+  });
+  pdfModal.classList.remove('hidden');
+});
+
+pdfCancelBtn.addEventListener('click', function() { pdfModal.classList.add('hidden'); });
+pdfModal.addEventListener('click', function(e) { if (e.target === pdfModal) pdfModal.classList.add('hidden'); });
+
+pdfConfirmBtn.addEventListener('click', function() {
+  var cols = [];
+  pdfChecks.querySelectorAll('.wl-field-cb:checked').forEach(function(cb) { cols.push(cb.value); });
+  if (!cols.length) return;
+  pdfModal.classList.add('hidden');
+  exportLinksPdf(cols);
+});
+
+function escH(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function exportLinksPdf(cols) {
+  var sourceUrl = urlInput.value.trim() || 'Web Link Scraper';
+  var date = new Date().toISOString().slice(0, 10);
+
+  var thCells = cols.map(function(c) {
+    var found = ALL_COLS.find(function(x) { return x.key === c; });
+    return '<th style="background:#f1f3f4;border:1px solid #dfe1e5;padding:7px 10px;' +
+      'text-align:left;font-size:12px;white-space:nowrap">' + escH(found ? found.label : c) + '</th>';
+  }).join('');
+
+  var trRows = filtered.map(function(link) {
+    var tds = cols.map(function(c) {
+      var val = link[c] != null ? String(link[c]) : '';
+      var cell;
+      if (c === 'url') {
+        var safe = (val.startsWith('http://') || val.startsWith('https://')) ? val : null;
+        cell = safe ? '<a href="' + escH(safe) + '" style="color:#1a73e8">' + escH(val) + '</a>' : escH(val);
+      } else {
+        cell = escH(val);
+      }
+      return '<td style="border:1px solid #dfe1e5;padding:6px 10px;font-size:12px;' +
+        (link.is_duplicate ? 'background:#fff8e1;' : '') +
+        (c === 'url' ? 'word-break:break-all;' : '') + '">' + cell + '</td>';
+    }).join('');
+    return '<tr>' + tds + '</tr>';
+  }).join('');
+
+  var css = 'body{font-family:Arial,sans-serif;margin:32px;color:#202124}' +
+    'h1{font-size:18px;margin-bottom:4px}' +
+    '.sub{font-size:12px;color:#70757a;margin-bottom:20px}' +
+    'table{border-collapse:collapse;width:100%}' +
+    '@media print{body{margin:0}a[href]::after{content:none}}';
+
+  var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
+    '<title>Web Links \u2014 ' + escH(date) + '</title>' +
+    '<style>' + css + '</style></head><body>' +
+    '<h1>Web Link Scraper</h1>' +
+    '<div class="sub">Source: ' + escH(sourceUrl) + ' \u00b7 Exported ' + escH(date) +
+      ' \u00b7 ' + filtered.length + ' link' + (filtered.length !== 1 ? 's' : '') + '</div>' +
+    '<table><thead><tr>' + thCells + '</tr></thead><tbody>' + trRows + '</tbody></table>' +
+    '</body></html>';
+
+  var blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+  var blobUrl = URL.createObjectURL(blob);
+  var win = window.open(blobUrl, '_blank');
+  if (!win) { alert('Please allow popups for this site to export PDF.'); URL.revokeObjectURL(blobUrl); return; }
+  win.addEventListener('load', function() { win.print(); URL.revokeObjectURL(blobUrl); });
+}
+
+// ── Clear ──────────────────────────────────────────────────────────────────
+clearBtn.addEventListener('click', function() {
+  allLinks = []; filtered = [];
+  hideResults();
+  statusEl.style.display = 'none';
+  countEl.textContent = '';
+  urlInput.value = ''; urlInput.focus();
+});
+</script>
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">❮</button>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>

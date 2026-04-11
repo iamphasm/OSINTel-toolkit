@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSIntelligence Toolkit — Telegram Scraper</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dash-page">
+
+<!-- ── App header ──────────────────────────────────────────────────────────── -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group" id="nav-tools-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item active">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<!-- ── Body ────────────────────────────────────────────────────────────────── -->
+<div class="dash-body">
+
+  <!-- Job log (hidden until a job runs) -->
+  <div class="job-wrap" id="job-wrap" style="display:none">
+    <div class="job-wrap-title">
+      <div class="mini-spin" id="job-spin"></div>
+      <span id="job-title-text">Working...</span>
+    </div>
+    <div class="job-progress-wrap" id="job-progress-wrap" style="display:none">
+      <div class="job-progress-bar-track">
+        <div class="job-progress-bar-fill" id="job-progress-fill"></div>
+      </div>
+      <span class="job-progress-label" id="job-progress-label">0%</span>
+    </div>
+    <div class="job-log" id="job-log"></div>
+  </div>
+
+  <!-- Search field -->
+  <div class="dash-search">
+    <form id="search-form">
+      <div class="search-wrap">
+        <button type="button" class="search-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+        <input id="q" type="text" autocomplete="off" placeholder="Search all channels...">
+        <button type="submit" class="search-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Controls row -->
+  <div class="dash-controls">
+    <div class="dash-controls-title">
+      Channels
+      <span class="count" id="channel-count"></span>
+    </div>
+    <div class="dash-controls-actions">
+      <div class="lang-selector">
+        <label for="lang-select">Language:</label>
+        <select id="lang-select" class="lang-select"></select>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="add-ch-btn">+ Add Channel</button>
+      <button class="btn btn-primary btn-sm" id="scrape-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Scrape Now
+      </button>
+    </div>
+  </div>
+
+  <!-- Channel grid -->
+  <div class="channel-grid" id="channel-grid">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<!-- ── Add Channel modal ────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="add-modal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-title">Add Channel</div>
+    <div class="modal-subtitle">
+      Enter a public channel username or t.me link.<br>
+      The channel will be added and scraped immediately.
+    </div>
+    <input id="add-input" class="modal-input" type="text"
+           placeholder="@channelname  or  https://t.me/channelname" autocomplete="off">
+    <div class="modal-error" id="add-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-submit">Add &amp; Scrape</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ────────────────────────────────────────────────────────────────── -->
+<div class="toast hidden" id="toast" role="status"></div>
+
+<script>
+'use strict';
+
+var LANGUAGES = [
+  { code: 'en',    name: 'English' },
+  { code: 'no',    name: 'Norwegian' },
+  { code: 'sv',    name: 'Swedish' },
+  { code: 'da',    name: 'Danish' },
+  { code: 'fi',    name: 'Finnish' },
+  { code: 'de',    name: 'German' },
+  { code: 'fr',    name: 'French' },
+  { code: 'es',    name: 'Spanish' },
+  { code: 'pt',    name: 'Portuguese' },
+  { code: 'it',    name: 'Italian' },
+  { code: 'nl',    name: 'Dutch' },
+  { code: 'pl',    name: 'Polish' },
+  { code: 'ru',    name: 'Russian' },
+  { code: 'uk',    name: 'Ukrainian' },
+  { code: 'tr',    name: 'Turkish' },
+  { code: 'ar',    name: 'Arabic' },
+  { code: 'zh-CN', name: 'Chinese' },
+  { code: 'ja',    name: 'Japanese' },
+  { code: 'ko',    name: 'Korean' },
+];
+var AVATAR_COLORS = ['color-1','color-2','color-3','color-4','color-5','color-6'];
+
+/* ── Language selector ────────────────────────────────────────────────────── */
+var savedLang = localStorage.getItem('tgs_lang') || 'en';
+var langSel = document.getElementById('lang-select');
+LANGUAGES.forEach(function(l) {
+  var o = document.createElement('option');
+  o.value = l.code; o.textContent = l.name;
+  if (l.code === savedLang) o.selected = true;
+  langSel.appendChild(o);
+});
+langSel.addEventListener('change', function() {
+  localStorage.setItem('tgs_lang', langSel.value);
+});
+
+/* ── Search ───────────────────────────────────────────────────────────────── */
+document.getElementById('search-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var q = document.getElementById('q').value.trim();
+  if (q) window.location.href = '/results?q=' + encodeURIComponent(q);
+});
+
+/* ── Toast ────────────────────────────────────────────────────────────────── */
+var _toastTimer = null;
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type || 'ok');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { t.className = 'toast hidden'; }, 4000);
+}
+
+/* ── Job polling ──────────────────────────────────────────────────────────── */
+var _pollTimer = null;
+var _logLen    = 0;
+var _scrapeTotal = 0;
+
+function setProgress(n, total) {
+  var wrap  = document.getElementById('job-progress-wrap');
+  var fill  = document.getElementById('job-progress-fill');
+  var label = document.getElementById('job-progress-label');
+  if (total <= 0) return;
+  wrap.style.display = '';
+  var pct = Math.min(Math.round((n / total) * 100), 100);
+  fill.style.width = pct + '%';
+  label.textContent = pct + '% — ' + n + ' / ' + total + ' messages';
+}
+
+function startPolling(operation, target) {
+  var wrap    = document.getElementById('job-wrap');
+  var logEl   = document.getElementById('job-log');
+  var titleEl = document.getElementById('job-title-text');
+  var spinEl  = document.getElementById('job-spin');
+  _logLen = 0;
+  _scrapeTotal = 0;
+  document.getElementById('job-progress-wrap').style.display = 'none';
+  document.getElementById('job-progress-fill').style.width = '0%';
+  wrap.style.display = '';
+  while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+  titleEl.textContent = operation === 'add'
+    ? 'Adding & scraping ' + target + '...'
+    : 'Scraping ' + target + '...';
+  spinEl.style.display = '';
+  document.getElementById('add-ch-btn').disabled = true;
+  document.getElementById('scrape-btn').disabled = true;
+
+  _pollTimer = setInterval(function() {
+    fetch('/api/scrape/status')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var lines = data.log || [];
+        for (var i = _logLen; i < lines.length; i++) {
+          var raw = lines[i];
+
+          // Parse progress markers — update bar, don't show in log
+          if (raw.indexOf('SCRAPE_START:') === 0) {
+            _scrapeTotal = parseInt(raw.slice('SCRAPE_START:'.length), 10) || 0;
+            setProgress(0, _scrapeTotal);
+            continue;
+          }
+          if (raw.indexOf('SCRAPE_PROG:') === 0) {
+            var n = parseInt(raw.slice('SCRAPE_PROG:'.length), 10) || 0;
+            setProgress(n, _scrapeTotal);
+            continue;
+          }
+
+          var line = document.createElement('div');
+          line.className = 'job-log-line' + (raw.toLowerCase().indexOf('error') >= 0 ? ' err' : '');
+          line.textContent = raw;
+          logEl.appendChild(line);
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+        _logLen = lines.length;
+        if (data.status === 'done') {
+          if (_scrapeTotal > 0) setProgress(_scrapeTotal, _scrapeTotal);
+          stopPolling(false);
+          showToast('Done! ' + (operation === 'add' ? target + ' added.' : 'Scrape complete.'), 'ok');
+          reloadChannels();
+        } else if (data.status === 'error') {
+          stopPolling(true);
+          showToast('Job failed. Check the log above.', 'err');
+        }
+      })
+      .catch(function() {});
+  }, 2000);
+}
+
+function stopPolling(keepLog) {
+  clearInterval(_pollTimer);
+  document.getElementById('job-spin').style.display = 'none';
+  document.getElementById('job-title-text').textContent = keepLog ? 'Job failed — see log' : 'Job complete';
+  document.getElementById('add-ch-btn').disabled = false;
+  document.getElementById('scrape-btn').disabled = false;
+  if (!keepLog) {
+    setTimeout(function() { document.getElementById('job-wrap').style.display = 'none'; }, 6000);
+  }
+}
+
+/* ── Add Channel modal ────────────────────────────────────────────────────── */
+document.getElementById('add-ch-btn').addEventListener('click', openModal);
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
+document.getElementById('add-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+document.getElementById('add-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') submitAdd();
+  if (e.key === 'Escape') closeModal();
+});
+document.getElementById('modal-submit').addEventListener('click', submitAdd);
+
+function openModal() {
+  document.getElementById('add-input').value = '';
+  document.getElementById('add-error').textContent = '';
+  document.getElementById('add-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('add-input').focus(); }, 50);
+}
+function closeModal() {
+  document.getElementById('add-modal').classList.add('hidden');
+}
+function submitAdd() {
+  var channel = document.getElementById('add-input').value.trim();
+  if (!channel) { document.getElementById('add-error').textContent = 'Please enter a channel name.'; return; }
+  var btn = document.getElementById('modal-submit');
+  btn.disabled = true; btn.textContent = 'Starting...';
+  document.getElementById('add-error').textContent = '';
+  fetch('/api/channel/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel: channel })
+  })
+  .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+  .then(function(res) {
+    btn.disabled = false; btn.textContent = 'Add & Scrape';
+    if (res.ok) { closeModal(); startPolling('add', channel); }
+    else { document.getElementById('add-error').textContent = res.data.detail || 'Unknown error'; }
+  })
+  .catch(function(err) {
+    btn.disabled = false; btn.textContent = 'Add & Scrape';
+    document.getElementById('add-error').textContent = err.message || 'Request failed';
+  });
+}
+
+/* ── Scrape Now ───────────────────────────────────────────────────────────── */
+document.getElementById('scrape-btn').addEventListener('click', function() {
+  var btn = this; btn.disabled = true;
+  fetch('/api/scrape', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  })
+  .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+  .then(function(res) {
+    if (res.ok) { startPolling('scrape', 'all channels'); }
+    else { btn.disabled = false; showToast(res.data.detail || 'Could not start scrape', 'err'); }
+  })
+  .catch(function(err) { btn.disabled = false; showToast(err.message || 'Request failed', 'err'); });
+});
+
+/* ── Channel cards ────────────────────────────────────────────────────────── */
+function colorFor(str) {
+  var h = 0;
+  for (var i = 0; i < (str||'').length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function fmtNum(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return n.toLocaleString();
+}
+function getStoredCount(u) {
+  try { var r = localStorage.getItem('tgs_seen_'+u); return r ? JSON.parse(r).count : null; }
+  catch (e) { return null; }
+}
+function makeSvg(paths, circles) {
+  var ns = 'http://www.w3.org/2000/svg';
+  var s = document.createElementNS(ns,'svg');
+  s.setAttribute('width','14'); s.setAttribute('height','14');
+  s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('fill','none');
+  s.setAttribute('stroke','currentColor'); s.setAttribute('stroke-width','2');
+  (paths||[]).forEach(function(d) { var p = document.createElementNS(ns,'path'); p.setAttribute('d',d); s.appendChild(p); });
+  (circles||[]).forEach(function(c) { var el = document.createElementNS(ns,'circle'); el.setAttribute('cx',c[0]); el.setAttribute('cy',c[1]); el.setAttribute('r',c[2]); s.appendChild(el); });
+  return s;
+}
+function buildCard(ch) {
+  var card = document.createElement('a');
+  card.className = 'ch-card';
+  card.href = '/channel/' + encodeURIComponent(ch.username || ch.channel_id);
+
+  var top = document.createElement('div'); top.className = 'ch-card-top';
+  var av = document.createElement('div');
+  av.className = 'ch-card-avatar ' + colorFor(ch.username || ch.title);
+  av.textContent = (ch.title || '?')[0].toUpperCase();
+  top.appendChild(av);
+  var nm = document.createElement('div'); nm.className = 'ch-card-name';
+  var tt = document.createElement('div'); tt.className = 'ch-card-title'; tt.textContent = ch.title||'';
+  var hh = document.createElement('div'); hh.className = 'ch-card-handle';
+  hh.textContent = ch.username ? '@'+ch.username : '';
+  nm.appendChild(tt); nm.appendChild(hh); top.appendChild(nm); card.appendChild(top);
+
+  var stats = document.createElement('div'); stats.className = 'ch-card-stats';
+  var sub = document.createElement('div'); sub.className = 'ch-card-stat';
+  sub.appendChild(makeSvg(['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'],[['12','7','4']]));
+  var subT = document.createElement('span'); subT.textContent = fmtNum(ch.subscribers); sub.appendChild(subT); stats.appendChild(sub);
+  var mc = document.createElement('div'); mc.className = 'ch-card-stat';
+  mc.appendChild(makeSvg(['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z']));
+  var mcT = document.createElement('span'); mcT.textContent = fmtNum(ch.message_count)+' msgs'; mc.appendChild(mcT); stats.appendChild(mc);
+  card.appendChild(stats);
+
+  var stored = getStoredCount(ch.username);
+  var newN = (stored !== null && ch.message_count > stored) ? ch.message_count - stored : 0;
+  if (newN > 0) {
+    var badge = document.createElement('div'); badge.className = 'new-badge';
+    badge.textContent = '+' + fmtNum(newN) + ' new'; card.appendChild(badge);
+  }
+  return card;
+}
+
+function reloadChannels() {
+  fetch('/api/channels')
+    .then(function(r) { return r.json(); })
+    .then(function(channels) {
+      var grid = document.getElementById('channel-grid');
+      while (grid.firstChild) grid.removeChild(grid.firstChild);
+      document.getElementById('channel-count').textContent = '(' + channels.length + ')';
+      if (!channels || channels.length === 0) {
+        var empty = document.createElement('div'); empty.className = 'empty-state'; empty.style.gridColumn='1/-1';
+        var h2 = document.createElement('h2'); h2.textContent = 'No channels indexed yet';
+        var p = document.createElement('p'); p.textContent = 'Click "+ Add Channel" to get started.';
+        empty.appendChild(h2); empty.appendChild(p); grid.appendChild(empty); return;
+      }
+      channels.forEach(function(ch) { grid.appendChild(buildCard(ch)); });
+    })
+    .catch(function(err) {
+      var grid = document.getElementById('channel-grid');
+      while (grid.firstChild) grid.removeChild(grid.firstChild);
+      var msg = document.createElement('p'); msg.style.color='#70757a';
+      msg.textContent = 'Failed to load channels: '+(err.message||''); grid.appendChild(msg);
+    });
+}
+
+/* ── Boot ─────────────────────────────────────────────────────────────────── */
+reloadChannels();
+fetch('/api/scrape/status')
+  .then(function(r) { return r.json(); })
+  .then(function(data) { if (data.status === 'running') startPolling(data.operation||'scrape', data.target||''); })
+  .catch(function() {});
+</script>
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">❮</button>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>

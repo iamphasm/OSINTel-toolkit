@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search Results — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- App header -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item active">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<!-- Search subheader -->
+<div class="results-subheader">
+  <div class="search-container">
+    <form id="search-form">
+      <div class="search-wrap">
+        <button type="button" class="search-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+        <input id="q" type="text" autocomplete="off" placeholder="Search...">
+        <button type="submit" class="search-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="results-body">
+  <div class="sort-tabs" id="sort-tabs">
+    <div class="sort-tab" data-sort="relevance">Best match</div>
+    <div class="sort-tab" data-sort="date">Most recent</div>
+    <div class="sort-tab" data-sort="views">Most viewed</div>
+  </div>
+
+  <div class="channel-filter" id="channel-filter" style="display:none">
+    <span style="font-size:13px;color:#70757a">Filtered by:</span>
+    <span class="channel-chip">
+      <span id="filter-chip-name"></span>
+      <span class="remove" id="remove-filter" style="cursor:pointer">x</span>
+    </span>
+  </div>
+
+  <div class="results-meta" id="results-meta"></div>
+  <div id="results-container"></div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+'use strict';
+
+const params = new URLSearchParams(location.search);
+let query         = params.get('q') || '';
+let page          = parseInt(params.get('page') || '1', 10);
+let sort          = params.get('sort') || 'relevance';
+let channelFilter = params.get('channel') || '';
+
+document.getElementById('q').value = query;
+
+document.querySelectorAll('.sort-tab').forEach(function(tab) {
+  if (tab.dataset.sort === sort) tab.classList.add('active');
+  tab.addEventListener('click', function() { sort = tab.dataset.sort; page = 1; navigate(); });
+});
+
+if (channelFilter) {
+  document.getElementById('channel-filter').style.display = 'flex';
+  document.getElementById('filter-chip-name').textContent = '@' + channelFilter;
+}
+document.getElementById('remove-filter').addEventListener('click', function() {
+  channelFilter = ''; page = 1; navigate();
+});
+
+document.getElementById('search-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  query = document.getElementById('q').value.trim();
+  page = 1; channelFilter = ''; navigate();
+});
+
+function navigate() {
+  var p = new URLSearchParams({ q: query, page: page, sort: sort });
+  if (channelFilter) p.set('channel', channelFilter);
+  location.href = '/results?' + p.toString();
+}
+
+/* Build highlighted text using DOM nodes only — no innerHTML */
+function makeHighlightedText(text, queryStr) {
+  var frag = document.createDocumentFragment();
+  if (!queryStr || !queryStr.trim()) {
+    frag.appendChild(document.createTextNode(text));
+    return frag;
+  }
+  var words = queryStr.trim().split(/\s+/)
+    .filter(Boolean)
+    .map(function(w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+  if (!words.length) {
+    frag.appendChild(document.createTextNode(text));
+    return frag;
+  }
+  var re = new RegExp('(' + words.join('|') + ')', 'gi');
+  var lastIndex = 0;
+  var match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+    var em = document.createElement('em');
+    em.textContent = match[0];
+    frag.appendChild(em);
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+  return frag;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  var d = new Date(dateStr.includes('Z') ? dateStr : dateStr + 'Z');
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatNumber(n) {
+  if (!n) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+
+function safeTelegramUrl(url) {
+  if (!url) return null;
+  try {
+    var u = new URL(url);
+    if (u.protocol === 'https:' && u.hostname === 't.me') return url;
+  } catch (_) {}
+  return null;
+}
+
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function buildResultCard(r) {
+  var card = el('div', 'result-card');
+
+  // Source line
+  var sourceLine = el('div', 'source-line');
+  var icon = el('div', 'channel-icon', (r.channel_title || '?')[0].toUpperCase());
+  sourceLine.appendChild(icon);
+  sourceLine.appendChild(el('span', 'channel-name', r.channel_title || ''));
+
+  var handle = el('span', 'channel-handle');
+  handle.appendChild(document.createTextNode(' \u00b7 '));
+  var chanUrl = safeTelegramUrl(r.channel_url);
+  if (r.channel_username && chanUrl) {
+    var ca = el('a');
+    ca.href = chanUrl;
+    ca.target = '_blank';
+    ca.rel = 'noopener noreferrer';
+    ca.textContent = '@' + r.channel_username;
+    handle.appendChild(ca);
+  } else if (r.channel_username) {
+    handle.appendChild(document.createTextNode('@' + r.channel_username));
+  }
+  sourceLine.appendChild(handle);
+  card.appendChild(sourceLine);
+
+  // Title
+  var titleText = (r.snippet || '').split('\n')[0].trim().slice(0, 80) || r.channel_title;
+  var titleEl = el('div', 'result-title');
+  var msgUrl = safeTelegramUrl(r.message_url);
+  if (msgUrl) {
+    var ta = el('a');
+    ta.href = msgUrl;
+    ta.target = '_blank';
+    ta.rel = 'noopener noreferrer';
+    ta.appendChild(makeHighlightedText(titleText, query));
+    titleEl.appendChild(ta);
+  } else {
+    titleEl.appendChild(makeHighlightedText(titleText, query));
+  }
+  card.appendChild(titleEl);
+
+  // URL display
+  if (msgUrl) {
+    card.appendChild(el('div', 'result-url', msgUrl));
+  }
+
+  // Snippet
+  var snippetEl = el('div', 'result-snippet');
+  snippetEl.appendChild(makeHighlightedText(r.snippet || '', query));
+  card.appendChild(snippetEl);
+
+  // Meta
+  var metaEl = el('div', 'result-meta');
+  metaEl.appendChild(el('span', null, formatDate(r.date)));
+  if (r.views > 0) metaEl.appendChild(el('span', null, formatNumber(r.views) + ' views'));
+  if (r.sender_name) metaEl.appendChild(el('span', null, 'by ' + r.sender_name));
+  if (r.has_media) {
+    var badge = el('span', 'media-badge', '\uD83D\uDCCE media');
+    metaEl.appendChild(badge);
+  }
+  if (r.channel_username) {
+    var filterSpan = el('span');
+    var filterLink = el('a', null, 'Filter by this channel');
+    filterLink.href = '#';
+    filterLink.addEventListener('click', (function(ch) {
+      return function(e) {
+        e.preventDefault();
+        channelFilter = ch;
+        page = 1;
+        navigate();
+      };
+    })(r.channel_username));
+    filterSpan.appendChild(filterLink);
+    metaEl.appendChild(filterSpan);
+  }
+  card.appendChild(metaEl);
+  return card;
+}
+
+function renderResults(data) {
+  var metaEl = document.getElementById('results-meta');
+  if (data.total === 0) {
+    metaEl.textContent = 'No results found.';
+  } else {
+    var start = (data.page - 1) * 10 + 1;
+    var end = Math.min(data.page * 10, data.total);
+    metaEl.textContent = 'About ' + data.total.toLocaleString() + ' results (messages ' + start + '\u2013' + end + ')';
+  }
+
+  var container = document.getElementById('results-container');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  if (!data.results || data.results.length === 0) {
+    var empty = el('div', 'empty-state');
+    var h2 = el('h2');
+    h2.appendChild(document.createTextNode('No results for "'));
+    var strong = el('strong', null, query);
+    h2.appendChild(strong);
+    h2.appendChild(document.createTextNode('"'));
+    var p = el('p');
+    p.appendChild(document.createTextNode('Try different keywords, or '));
+    var a = el('a', null, 'browse indexed channels');
+    a.href = '/channels';
+    p.appendChild(a);
+    p.appendChild(document.createTextNode('.'));
+    empty.appendChild(h2);
+    empty.appendChild(p);
+    container.appendChild(empty);
+    return;
+  }
+
+  data.results.forEach(function(r) { container.appendChild(buildResultCard(r)); });
+  renderPagination(data.page, data.pages);
+}
+
+function renderPagination(current, total) {
+  var el2 = document.getElementById('pagination');
+  while (el2.firstChild) el2.removeChild(el2.firstChild);
+  if (total <= 1) return;
+
+  var pages = [];
+  if (total <= 7) {
+    for (var i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages = [1];
+    if (current > 3) pages.push('...');
+    for (var p2 = Math.max(2, current - 1); p2 <= Math.min(total - 1, current + 1); p2++) pages.push(p2);
+    if (current < total - 2) pages.push('...');
+    pages.push(total);
+  }
+
+  function makeBtn(label, disabled, active, onClick) {
+    var btn = document.createElement('button');
+    btn.className = 'page-btn' + (active ? ' active' : '');
+    btn.textContent = label;
+    btn.disabled = disabled;
+    if (!disabled && !active && onClick) btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  el2.appendChild(makeBtn('\u2039', current === 1, false, function() { page = current - 1; navigate(); }));
+  pages.forEach(function(p3) {
+    if (p3 === '...') {
+      el2.appendChild(makeBtn('\u2026', true, false, null));
+    } else {
+      el2.appendChild(makeBtn(p3, false, p3 === current, function(n) {
+        return function() { page = n; navigate(); };
+      }(p3)));
+    }
+  });
+  el2.appendChild(makeBtn('\u203a', current === total, false, function() { page = current + 1; navigate(); }));
+}
+
+if (!query) {
+  window.location.href = '/';
+} else {
+  document.title = query + ' \u2014 OSIntelligence Toolkit';
+
+  var spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  document.getElementById('results-container').appendChild(spinner);
+
+  var apiParams = new URLSearchParams({ q: query, page: page, sort: sort });
+  if (channelFilter) apiParams.set('channel', channelFilter);
+
+  fetch('/api/search?' + apiParams.toString())
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(renderResults)
+    .catch(function(err) {
+      var container = document.getElementById('results-container');
+      while (container.firstChild) container.removeChild(container.firstChild);
+      var msg = document.createElement('div');
+      msg.className = 'empty-state';
+      var h2 = document.createElement('h2');
+      h2.textContent = 'Something went wrong';
+      var p = document.createElement('p');
+      p.textContent = (err && err.message) ? err.message : 'Could not load results.';
+      msg.appendChild(h2);
+      msg.appendChild(p);
+      container.appendChild(msg);
+    });
+}
+</script>
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">❯</button>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>

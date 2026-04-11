@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowMap — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .tool-frame-page { display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+    .tool-frame-page .app-header { flex-shrink:0; }
+    .tool-iframe { flex:1; width:100%; border:none; display:block; }
+    .iframe-blocked {
+      display:none; flex:1; align-items:center; justify-content:center;
+      flex-direction:column; gap:14px; background:#f8f9fa;
+      text-align:center; padding:40px;
+    }
+    .iframe-blocked h2 { font-size:20px; color:#202124; margin:0; }
+    .iframe-blocked p  { font-size:14px; color:#70757a; margin:0; max-width:420px; }
+    .iframe-blocked a  {
+      display:inline-block; margin-top:8px; padding:10px 22px;
+      background:#1a73e8; color:#fff; border-radius:6px;
+      text-decoration:none; font-size:14px; font-weight:500;
+    }
+    .iframe-blocked a:hover { background:#1558d6; }
+  </style>
+</head>
+<body class="tool-frame-page">
+
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item active">ShadowMap</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<iframe
+  id="tool-iframe"
+  class="tool-iframe"
+  src="https://app.shadowmap.org/"
+  title="ShadowMap"
+  allow="geolocation; fullscreen"
+  loading="lazy">
+</iframe>
+
+<div class="iframe-blocked" id="iframe-blocked">
+  <h2>ShadowMap cannot be embedded</h2>
+  <p>This site blocks embedding via its security policy.</p>
+  <a href="https://app.shadowmap.org/" target="_blank" rel="noopener noreferrer">Open ShadowMap in a new tab &#x2197;</a>
+</div>
+
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">❯</button>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+<script>
+'use strict';
+var iframe = document.getElementById('tool-iframe');
+var blocked = document.getElementById('iframe-blocked');
+iframe.addEventListener('load', function() {
+  try {
+    var doc = iframe.contentDocument;
+    if (doc && doc.body && doc.body.innerHTML === '') {
+      iframe.style.display = 'none';
+      blocked.style.display = 'flex';
+    }
+  } catch (e) { /* cross-origin loaded fine */ }
+});
+</script>
+</body>
+</html>
