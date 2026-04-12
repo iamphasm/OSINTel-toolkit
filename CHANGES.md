@@ -1,7 +1,7 @@
 # CHANGES — OSIntelligence Toolkit
 
 Developed by Phasm. All notable changes are recorded here, newest first.
-Current version: v1.0.3
+Current version: v1.0.4
 
 ---
 

@@ -275,17 +275,54 @@ document.getElementById('meta-clear-btn').addEventListener('click', function() {
   document.getElementById('meta-url-input').value = '';
 });
 
+// ── Local toast ────────────────────────────────────────────────────────────
+function metaToast(msg, isErr) {
+  var t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div'); t.id = 'toast';
+    t.className = 'toast hidden'; document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.className = 'toast ' + (isErr ? 'err' : 'ok');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function() { t.className = 'toast hidden'; }, 3500);
+}
+
 // ── Add to Project ─────────────────────────────────────────────────────────
 document.getElementById('meta-project-btn').addEventListener('click', function() {
   if (!currentData) return;
-  if (!window.phasmExportHtmlToProject) {
-    alert('Open the Projects sidebar first via the Projects menu in the top bar.');
+
+  var btn = document.getElementById('meta-project-btn');
+
+  // Resolve active project directly from localStorage
+  var activeProject = null;
+  try { activeProject = JSON.parse(localStorage.getItem('phasm_project') || 'null'); } catch(e) {}
+
+  if (!activeProject) {
+    metaToast('No active project — open Projects \u2192 Choose Project first.', true);
     return;
   }
+
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+
   var html = buildMetaPdfHtml(currentData);
   var stem = currentData.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_\-]/g, '_');
   var sourceRef = new Date().toISOString().slice(0, 10) + '_' + stem;
-  window.phasmExportHtmlToProject(html, 'Metadata Extractor', sourceRef);
+
+  fetch('/api/projects/' + activeProject.id + '/file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source_type: 'Metadata Extractor', source_ref: sourceRef, content: html })
+  })
+  .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || 'HTTP ' + r.status); }); return r.json(); })
+  .then(function() {
+    btn.disabled = false; btn.textContent = 'Add to Project';
+    metaToast('Saved to "' + sourceRef + '.html" in "' + activeProject.name + '".');
+  })
+  .catch(function(e) {
+    btn.disabled = false; btn.textContent = 'Add to Project';
+    metaToast('Export failed: ' + e.message, true);
+  });
 });
 
 // ── PDF export ─────────────────────────────────────────────────────────────
