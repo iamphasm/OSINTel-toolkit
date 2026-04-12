@@ -35,6 +35,19 @@ A standalone web scraper that extracts all hyperlinks from any public URL.
 - Export results as CSV with a column picker modal
 - Export results as PDF with a column picker modal (opens print dialog)
 
+### Metadata Extractor *(GEOSINT)*
+Extracts embedded metadata from digital files — either by uploading a file or providing a direct URL.
+
+- Supports photos (JPEG, PNG, TIFF, HEIC), PDFs, Word documents (.docx), audio (MP3, FLAC, OGG, WAV, M4A), and video files
+- Image EXIF data: camera make/model, lens, focal length, aperture, shutter speed, ISO
+- GPS extraction: latitude, longitude, altitude, speed, and direction — with direct links to Google Maps and OpenStreetMap
+- PDF metadata: title, author, creator, producer, creation and modification dates
+- Document metadata: author, revision, last modified by, keywords
+- Audio/video: duration, bitrate, sample rate, codec, embedded tags
+- Copy-to-clipboard button on every field
+- Export full metadata report as PDF
+- File upload (drag & drop) or remote URL (max 50 MB)
+
 ### ShadowMap *(GEOSINT)*
 An embedded viewer for [ShadowMap](https://app.shadowmap.org/), a geospatial tool for analysing sun position, shadows, and lighting conditions at any location and time. Useful for verifying the time or date of photos based on shadow direction.
 

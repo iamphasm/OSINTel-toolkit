@@ -1,7 +1,27 @@
 # CHANGES — OSIntelligence Toolkit
 
 Developed by Phasm. All notable changes are recorded here, newest first.
-Current version: v1.0.1
+Current version: v1.0.2
+
+---
+
+## v1.0.1
+
+### GEOSINT — Metadata Extractor
+- New page at `/metadata` accessible from GEOSINT → Metadata Extractor in all pages
+- File upload via drag & drop or click-to-browse (max 50 MB)
+- URL extraction: downloads remote file and extracts metadata server-side
+- Image EXIF: camera make/model, lens, date/time, focal length, aperture, shutter speed, ISO, white balance
+- GPS extraction: latitude, longitude, altitude, speed, direction — with Google Maps and OpenStreetMap links
+- GPS banner highlighted at top of results when coordinates are present
+- PDF metadata: page count, title, author, creator, producer, creation and modification dates
+- Word document (.docx) metadata: author, revision, last modified by, keywords, status
+- Audio/video (MP3, FLAC, OGG, WAV, M4A, MP4 etc.): duration, bitrate, sample rate, codec, embedded tags
+- Results displayed as category cards with key/value table rows
+- Copy-to-clipboard button on every field value
+- Export full metadata report as PDF (opens print dialog)
+- New API endpoints: `POST /api/metadata/upload`, `POST /api/metadata/url`
+- New dependencies: Pillow, pypdf, python-docx, mutagen
 
 ---
 

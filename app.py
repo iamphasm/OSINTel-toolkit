@@ -15,10 +15,19 @@ import re
 import httpx
 from urllib.parse import urljoin, urlparse
 
-from fastapi import FastAPI, Query, HTTPException
+import io
+import mimetypes
+import struct
+
+from fastapi import FastAPI, Query, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
+import pypdf
+import mutagen
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -712,6 +721,269 @@ async def api_weblinks_extract(body: WebLinksBody):
     return {"url": raw_url, "total": len(links), "links": links}
 
 
+# ─── Metadata extractor ───────────────────────────────────────────────────────
+
+METADATA_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+
+class MetadataUrlBody(BaseModel):
+    url: str
+
+def _fmt_size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+def _rational_to_float(v) -> float:
+    try:
+        if hasattr(v, 'numerator'):
+            return v.numerator / v.denominator
+        if isinstance(v, tuple) and len(v) == 2:
+            return v[0] / v[1]
+        return float(v)
+    except Exception:
+        return 0.0
+
+def _dms_to_decimal(dms, ref: str) -> Optional[float]:
+    try:
+        d = _rational_to_float(dms[0])
+        m = _rational_to_float(dms[1])
+        s = _rational_to_float(dms[2])
+        dec = d + m / 60 + s / 3600
+        if ref in ("S", "W"):
+            dec = -dec
+        return round(dec, 7)
+    except Exception:
+        return None
+
+def _fmt_exif_value(tag: str, value) -> str:
+    try:
+        if tag == "FNumber":
+            return f"f/{_rational_to_float(value):.1f}"
+        if tag == "ExposureTime":
+            v = _rational_to_float(value)
+            return f"1/{round(1/v)}s" if v < 1 else f"{v}s"
+        if tag == "FocalLength":
+            return f"{_rational_to_float(value):.0f} mm"
+        if tag in ("ISOSpeedRatings", "PhotographicSensitivity"):
+            return str(value)
+        if tag == "ExposureBiasValue":
+            return f"{_rational_to_float(value):+.1f} EV"
+        if tag == "Flash":
+            return "Yes" if int(value) & 1 else "No"
+        if tag == "MeteringMode":
+            modes = {0:"Unknown",1:"Average",2:"Center-weighted",3:"Spot",4:"Multi-spot",5:"Multi-segment",6:"Partial"}
+            return modes.get(int(value), str(value))
+        if tag == "WhiteBalance":
+            return "Manual" if int(value) == 1 else "Auto"
+    except Exception:
+        pass
+    return str(value)
+
+def _extract_image(file_bytes: bytes, result: dict):
+    try:
+        img = Image.open(io.BytesIO(file_bytes))
+        result["categories"].append({"name": "Image", "fields": [
+            {"key": "Format",     "value": img.format or "Unknown"},
+            {"key": "Mode",       "value": img.mode},
+            {"key": "Dimensions", "value": f"{img.width} × {img.height} px"},
+        ]})
+        exif_raw = img._getexif() if hasattr(img, "_getexif") else None
+        if not exif_raw:
+            return
+        camera, settings, gps_raw = [], [], {}
+        CAMERA_TAGS = {"Make","Model","Software","LensModel","LensMake","HostComputer",
+                       "DateTime","DateTimeOriginal","DateTimeDigitized","Artist","Copyright"}
+        SETTINGS_TAGS = {"FNumber","ExposureTime","ISOSpeedRatings","PhotographicSensitivity",
+                         "FocalLength","ExposureBiasValue","MeteringMode","Flash","WhiteBalance",
+                         "ExposureProgram","SceneCaptureType"}
+        for tag_id, val in exif_raw.items():
+            tag = TAGS.get(tag_id, str(tag_id))
+            if tag == "GPSInfo":
+                for gid, gval in val.items():
+                    gps_raw[GPSTAGS.get(gid, str(gid))] = gval
+            elif tag in CAMERA_TAGS:
+                camera.append({"key": tag.replace("DateTime","Date/Time"), "value": str(val).strip()})
+            elif tag in SETTINGS_TAGS:
+                settings.append({"key": tag, "value": _fmt_exif_value(tag, val)})
+        if camera:
+            result["categories"].append({"name": "Camera", "fields": camera})
+        if settings:
+            result["categories"].append({"name": "Camera Settings", "fields": settings})
+        if gps_raw:
+            lat = _dms_to_decimal(gps_raw.get("GPSLatitude"), gps_raw.get("GPSLatitudeRef",""))
+            lon = _dms_to_decimal(gps_raw.get("GPSLongitude"), gps_raw.get("GPSLongitudeRef",""))
+            gps_fields = []
+            if lat is not None:
+                gps_fields.append({"key": "Latitude",  "value": f"{abs(lat):.6f}° {gps_raw.get('GPSLatitudeRef','')}"})
+            if lon is not None:
+                gps_fields.append({"key": "Longitude", "value": f"{abs(lon):.6f}° {gps_raw.get('GPSLongitudeRef','')}"})
+            if "GPSAltitude" in gps_raw:
+                gps_fields.append({"key": "Altitude", "value": f"{_rational_to_float(gps_raw['GPSAltitude']):.1f} m"})
+            if "GPSSpeed" in gps_raw:
+                gps_fields.append({"key": "Speed", "value": f"{_rational_to_float(gps_raw['GPSSpeed']):.1f} km/h"})
+            if "GPSImgDirection" in gps_raw:
+                gps_fields.append({"key": "Direction", "value": f"{_rational_to_float(gps_raw['GPSImgDirection']):.1f}°"})
+            if "GPSDateStamp" in gps_raw:
+                gps_fields.append({"key": "GPS Date", "value": str(gps_raw["GPSDateStamp"])})
+            if lat is not None and lon is not None:
+                result["gps"] = {"lat": lat, "lon": lon}
+                gps_fields.append({"key": "Google Maps", "value": f"https://maps.google.com/?q={lat},{lon}"})
+                gps_fields.append({"key": "OpenStreetMap", "value": f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=15"})
+            if gps_fields:
+                result["categories"].append({"name": "GPS", "fields": gps_fields})
+    except Exception as e:
+        result["categories"].append({"name": "Image", "fields": [{"key": "Parse Error", "value": str(e)}]})
+
+def _extract_pdf(file_bytes: bytes, result: dict):
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+        fields = [{"key": "Pages", "value": str(len(reader.pages))}]
+        meta = reader.metadata
+        if meta:
+            mapping = {
+                "/Title": "Title", "/Author": "Author", "/Subject": "Subject",
+                "/Creator": "Creator", "/Producer": "Producer",
+                "/CreationDate": "Created", "/ModDate": "Modified",
+                "/Keywords": "Keywords",
+            }
+            for k, label in mapping.items():
+                v = meta.get(k)
+                if v:
+                    s = str(v)
+                    if s.startswith("D:") and len(s) >= 10:
+                        s = f"{s[2:6]}-{s[6:8]}-{s[8:10]} {s[10:12]}:{s[12:14]}:{s[14:16]}" if len(s) >= 16 else s[2:]
+                    fields.append({"key": label, "value": s.strip()})
+        if reader.is_encrypted:
+            fields.append({"key": "Encrypted", "value": "Yes"})
+        result["categories"].append({"name": "PDF", "fields": fields})
+    except Exception as e:
+        result["categories"].append({"name": "PDF", "fields": [{"key": "Parse Error", "value": str(e)}]})
+
+def _extract_docx(file_bytes: bytes, result: dict):
+    try:
+        import docx
+        doc = docx.Document(io.BytesIO(file_bytes))
+        cp = doc.core_properties
+        fields = []
+        for attr, label in [("title","Title"),("author","Author"),("last_modified_by","Last Modified By"),
+                             ("subject","Subject"),("description","Description"),("keywords","Keywords"),
+                             ("created","Created"),("modified","Modified"),("revision","Revision"),
+                             ("category","Category"),("content_status","Status")]:
+            v = getattr(cp, attr, None)
+            if v:
+                fields.append({"key": label, "value": str(v).strip()})
+        if fields:
+            result["categories"].append({"name": "Document", "fields": fields})
+    except Exception as e:
+        result["categories"].append({"name": "Document", "fields": [{"key": "Parse Error", "value": str(e)}]})
+
+def _extract_audio_video(file_bytes: bytes, filename: str, result: dict):
+    try:
+        f = mutagen.File(io.BytesIO(file_bytes), filename=filename, easy=False)
+        if f is None:
+            return
+        fields = []
+        if hasattr(f, "info"):
+            info = f.info
+            if hasattr(info, "length"):
+                s = int(info.length)
+                fields.append({"key": "Duration", "value": f"{s//60}:{s%60:02d}"})
+            if hasattr(info, "bitrate"):
+                fields.append({"key": "Bitrate", "value": f"{info.bitrate} kbps"})
+            if hasattr(info, "sample_rate"):
+                fields.append({"key": "Sample Rate", "value": f"{info.sample_rate} Hz"})
+            if hasattr(info, "channels"):
+                fields.append({"key": "Channels", "value": str(info.channels)})
+            if hasattr(info, "width") and hasattr(info, "height"):
+                fields.append({"key": "Dimensions", "value": f"{info.width} × {info.height} px"})
+            if hasattr(info, "codec"):
+                fields.append({"key": "Codec", "value": str(info.codec)})
+        tag_map = {
+            "TIT2":"Title", "TPE1":"Artist", "TALB":"Album", "TDRC":"Year",
+            "TCOM":"Composer", "TCON":"Genre", "TRCK":"Track", "COMM:":"Comment",
+            "©nam":"Title", "©ART":"Artist", "©alb":"Album", "©day":"Year",
+            "title":"Title", "artist":"Artist", "album":"Album", "date":"Year",
+            "genre":"Genre", "tracknumber":"Track",
+        }
+        for key, val in f.tags.items() if f.tags else []:
+            label = next((v for k, v in tag_map.items() if key.startswith(k)), None)
+            if label:
+                try:
+                    text = str(val.text[0]) if hasattr(val, "text") else str(val)
+                    fields.append({"key": label, "value": text.strip()})
+                except Exception:
+                    pass
+        if fields:
+            result["categories"].append({"name": "Audio/Video", "fields": fields})
+    except Exception as e:
+        result["categories"].append({"name": "Audio/Video", "fields": [{"key": "Parse Error", "value": str(e)}]})
+
+def extract_file_metadata(file_bytes: bytes, filename: str) -> dict:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    result: dict = {
+        "filename": filename,
+        "file_size": len(file_bytes),
+        "mime_type": mime_type,
+        "categories": [],
+        "gps": None,
+    }
+    result["categories"].append({"name": "File", "fields": [
+        {"key": "Filename",  "value": filename},
+        {"key": "File Size", "value": _fmt_size(len(file_bytes))},
+        {"key": "MIME Type", "value": mime_type},
+        {"key": "Extension", "value": ext.upper() if ext else "Unknown"},
+    ]})
+    if mime_type.startswith("image/"):
+        _extract_image(file_bytes, result)
+    elif mime_type == "application/pdf":
+        _extract_pdf(file_bytes, result)
+    elif ext in ("docx",):
+        _extract_docx(file_bytes, result)
+    elif mime_type.startswith("audio/") or mime_type.startswith("video/") or ext in ("mp3","flac","ogg","wav","m4a","mp4","mkv","avi","mov"):
+        _extract_audio_video(file_bytes, filename, result)
+    return result
+
+
+@app.post("/api/metadata/upload")
+async def api_metadata_upload(file: UploadFile = File(...)):
+    data = await file.read(METADATA_MAX_BYTES + 1)
+    if len(data) > METADATA_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 50 MB limit")
+    return extract_file_metadata(data, file.filename or "upload")
+
+
+@app.post("/api/metadata/url")
+async def api_metadata_url(body: MetadataUrlBody):
+    parsed = urlparse(body.url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http/https URLs are supported")
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            async with client.stream("GET", body.url) as resp:
+                resp.raise_for_status()
+                chunks = []
+                total = 0
+                async for chunk in resp.aiter_bytes(65536):
+                    total += len(chunk)
+                    if total > METADATA_MAX_BYTES:
+                        raise HTTPException(status_code=413, detail="Remote file exceeds 50 MB limit")
+                    chunks.append(chunk)
+                data = b"".join(chunks)
+        filename = parsed.path.rsplit("/", 1)[-1] or "download"
+        if not filename or "." not in filename:
+            ct = resp.headers.get("content-type", "")
+            ext = mimetypes.guess_extension(ct.split(";")[0].strip()) or ""
+            filename = "download" + ext
+        return extract_file_metadata(data, filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 # ─── Frontend routes ──────────────────────────────────────────────────────────
 
 @app.get("/", response_class=FileResponse)
@@ -742,3 +1014,8 @@ async def weblinks_page():
 @app.get("/shadowmap", response_class=FileResponse)
 async def shadowmap_page():
     return FileResponse("static/shadowmap.html")
+
+
+@app.get("/metadata", response_class=FileResponse)
+async def metadata_page():
+    return FileResponse("static/metadata.html")

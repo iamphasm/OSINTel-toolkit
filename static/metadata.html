@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Metadata Extractor — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="meta-page">
+
+<!-- App header -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+        <a href="/metadata" class="nav-dropdown-item active">Metadata Extractor</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<div class="meta-body">
+
+  <!-- Input panel -->
+  <div class="meta-input-panel">
+    <div class="meta-tabs">
+      <button class="meta-tab active" id="tab-upload">Upload File</button>
+      <button class="meta-tab" id="tab-url">From URL</button>
+    </div>
+
+    <!-- Upload tab -->
+    <div class="meta-tab-panel" id="panel-upload">
+      <div class="meta-dropzone" id="meta-dropzone">
+        <input type="file" id="meta-file-input" class="meta-file-input"
+          accept="image/*,video/*,audio/*,.pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt">
+        <div class="meta-drop-icon">&#128196;</div>
+        <div class="meta-drop-label">Drag &amp; drop a file here, or <span class="meta-drop-link">click to browse</span></div>
+        <div class="meta-drop-hint">Photos, videos, audio, PDFs, Word documents — max 50 MB</div>
+      </div>
+    </div>
+
+    <!-- URL tab -->
+    <div class="meta-tab-panel hidden" id="panel-url">
+      <div class="meta-url-row">
+        <input type="url" id="meta-url-input" class="meta-url-input" placeholder="https://example.com/photo.jpg" autocomplete="off">
+        <button id="meta-url-btn" class="meta-go-btn">Extract</button>
+      </div>
+      <div class="meta-url-hint">Enter a direct link to a file (image, PDF, audio, etc.)</div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="meta-status" id="meta-status" style="display:none">
+    <div class="mini-spin"></div>
+    <span id="meta-status-text">Extracting metadata...</span>
+  </div>
+
+  <!-- Results -->
+  <div class="meta-results" id="meta-results" style="display:none">
+    <div class="meta-results-header">
+      <div class="meta-results-title" id="meta-results-title"></div>
+      <div class="meta-results-actions">
+        <button class="meta-action-btn meta-pdf-btn" id="meta-pdf-btn">Export PDF</button>
+        <button class="meta-action-btn meta-clear-btn" id="meta-clear-btn">Clear</button>
+      </div>
+    </div>
+
+    <!-- GPS map banner (shown when GPS coords found) -->
+    <div class="meta-gps-banner" id="meta-gps-banner" style="display:none">
+      <span class="meta-gps-icon">&#128205;</span>
+      <span id="meta-gps-coords"></span>
+      <div class="meta-gps-links" id="meta-gps-links"></div>
+    </div>
+
+    <div class="meta-categories" id="meta-categories"></div>
+  </div>
+
+</div>
+
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">&#10094;</button>
+
+<script>
+'use strict';
+
+var currentData = null;
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+document.getElementById('tab-upload').addEventListener('click', function() { switchTab('upload'); });
+document.getElementById('tab-url').addEventListener('click',    function() { switchTab('url'); });
+
+function switchTab(name) {
+  document.querySelectorAll('.meta-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.meta-tab-panel').forEach(function(p) { p.classList.add('hidden'); });
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('panel-' + name).classList.remove('hidden');
+}
+
+// ── Drag & drop / file input ───────────────────────────────────────────────
+var dropzone  = document.getElementById('meta-dropzone');
+var fileInput = document.getElementById('meta-file-input');
+
+dropzone.addEventListener('click', function(e) {
+  if (e.target !== fileInput) fileInput.click();
+});
+
+dropzone.addEventListener('dragover', function(e) {
+  e.preventDefault(); dropzone.classList.add('dragover');
+});
+dropzone.addEventListener('dragleave', function() { dropzone.classList.remove('dragover'); });
+dropzone.addEventListener('drop', function(e) {
+  e.preventDefault(); dropzone.classList.remove('dragover');
+  var file = e.dataTransfer.files[0];
+  if (file) uploadFile(file);
+});
+
+fileInput.addEventListener('change', function() {
+  if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+});
+
+function uploadFile(file) {
+  setLoading('Extracting metadata from ' + file.name + '...');
+  var form = new FormData();
+  form.append('file', file);
+  fetch('/api/metadata/upload', { method: 'POST', body: form })
+    .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || 'HTTP ' + r.status); }); return r.json(); })
+    .then(function(data) { setLoading(false); showResults(data); })
+    .catch(function(e) { showError(e.message); });
+}
+
+// ── URL extraction ─────────────────────────────────────────────────────────
+document.getElementById('meta-url-btn').addEventListener('click', doUrlExtract);
+document.getElementById('meta-url-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doUrlExtract();
+});
+
+function doUrlExtract() {
+  var url = document.getElementById('meta-url-input').value.trim();
+  if (!url) return;
+  setLoading('Downloading and extracting metadata...');
+  fetch('/api/metadata/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url })
+  })
+  .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || 'HTTP ' + r.status); }); return r.json(); })
+  .then(function(data) { setLoading(false); showResults(data); })
+  .catch(function(e) { showError(e.message); });
+}
+
+// ── Render results ─────────────────────────────────────────────────────────
+function showResults(data) {
+  currentData = data;
+  document.getElementById('meta-results').style.display = '';
+  document.getElementById('meta-results-title').textContent = data.filename + ' \u00b7 ' + data.mime_type;
+
+  // GPS banner
+  var gpsBanner = document.getElementById('meta-gps-banner');
+  if (data.gps) {
+    var lat = data.gps.lat, lon = data.gps.lon;
+    document.getElementById('meta-gps-coords').textContent =
+      'GPS: ' + Math.abs(lat).toFixed(6) + '\u00b0 ' + (lat >= 0 ? 'N' : 'S') + ',  ' +
+      Math.abs(lon).toFixed(6) + '\u00b0 ' + (lon >= 0 ? 'E' : 'W');
+    var linksEl = document.getElementById('meta-gps-links');
+    linksEl.textContent = '';
+    [
+      ['Google Maps', 'https://maps.google.com/?q=' + lat + ',' + lon],
+      ['OpenStreetMap', 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '&zoom=15'],
+    ].forEach(function(item) {
+      var a = document.createElement('a');
+      a.href = item[1]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = item[0]; a.className = 'meta-gps-map-link';
+      linksEl.appendChild(a);
+    });
+    gpsBanner.style.display = '';
+  } else {
+    gpsBanner.style.display = 'none';
+  }
+
+  // Categories
+  var cats = document.getElementById('meta-categories');
+  cats.textContent = '';
+  data.categories.forEach(function(cat) {
+    var card = document.createElement('div');
+    card.className = 'meta-card';
+
+    var hdr = document.createElement('div');
+    hdr.className = 'meta-card-hdr';
+    hdr.textContent = cat.name;
+    card.appendChild(hdr);
+
+    var table = document.createElement('table');
+    table.className = 'meta-table';
+    cat.fields.forEach(function(f) {
+      var tr = document.createElement('tr');
+      var th = document.createElement('th');
+      th.className = 'meta-th'; th.textContent = f.key;
+      var td = document.createElement('td');
+      td.className = 'meta-td';
+
+      // Render map links as clickable
+      if (f.key === 'Google Maps' || f.key === 'OpenStreetMap') {
+        var a = document.createElement('a');
+        a.href = f.value; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.textContent = f.value; td.appendChild(a);
+      } else {
+        td.textContent = f.value;
+      }
+
+      // Copy button
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'meta-copy-btn'; copyBtn.title = 'Copy';
+      copyBtn.textContent = '\u29C5';
+      copyBtn.addEventListener('click', function() {
+        navigator.clipboard.writeText(f.value).then(function() {
+          copyBtn.textContent = '\u2713';
+          setTimeout(function() { copyBtn.textContent = '\u29C5'; }, 1500);
+        });
+      });
+      td.appendChild(copyBtn);
+
+      tr.appendChild(th); tr.appendChild(td);
+      table.appendChild(tr);
+    });
+    card.appendChild(table);
+    cats.appendChild(card);
+  });
+}
+
+function setLoading(msg) {
+  document.getElementById('meta-results').style.display = 'none';
+  var s = document.getElementById('meta-status');
+  if (msg) {
+    document.getElementById('meta-status-text').textContent = msg;
+    s.style.display = 'flex';
+  } else {
+    s.style.display = 'none';
+  }
+}
+
+function showError(msg) {
+  document.getElementById('meta-status').style.display = 'flex';
+  document.querySelector('#meta-status .mini-spin').style.display = 'none';
+  document.getElementById('meta-status-text').textContent = 'Error: ' + msg;
+}
+
+document.getElementById('meta-clear-btn').addEventListener('click', function() {
+  currentData = null;
+  document.getElementById('meta-results').style.display = 'none';
+  document.getElementById('meta-status').style.display = 'none';
+  document.querySelector('#meta-status .mini-spin').style.display = '';
+  fileInput.value = '';
+  document.getElementById('meta-url-input').value = '';
+});
+
+// ── PDF export ─────────────────────────────────────────────────────────────
+document.getElementById('meta-pdf-btn').addEventListener('click', function() {
+  if (!currentData) return;
+  var html = buildMetaPdfHtml(currentData);
+  var blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+  var blobUrl = URL.createObjectURL(blob);
+  var win = window.open(blobUrl, '_blank');
+  if (!win) { alert('Please allow popups for this site to export PDF.'); URL.revokeObjectURL(blobUrl); return; }
+  win.addEventListener('load', function() { win.print(); URL.revokeObjectURL(blobUrl); });
+});
+
+function escH(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildMetaPdfHtml(data) {
+  var catHtml = data.categories.map(function(cat) {
+    var rows = cat.fields.map(function(f) {
+      var val = (f.key === 'Google Maps' || f.key === 'OpenStreetMap')
+        ? '<a href="' + escH(f.value) + '">' + escH(f.value) + '</a>'
+        : escH(f.value);
+      return '<tr><th style="text-align:left;padding:5px 12px 5px 0;font-size:12px;color:#555;white-space:nowrap;vertical-align:top;width:160px">' +
+        escH(f.key) + '</th><td style="padding:5px 0;font-size:12px;word-break:break-word">' + val + '</td></tr>';
+    }).join('');
+    return '<div style="margin-bottom:20px">' +
+      '<div style="font-size:13px;font-weight:700;color:#202124;border-bottom:2px solid #e8eaed;padding-bottom:4px;margin-bottom:8px">' + escH(cat.name) + '</div>' +
+      '<table style="border-collapse:collapse;width:100%">' + rows + '</table></div>';
+  }).join('');
+
+  var gpsBanner = data.gps
+    ? '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:13px">' +
+      '&#128205; GPS: ' + Math.abs(data.gps.lat).toFixed(6) + '° ' + (data.gps.lat >= 0 ? 'N' : 'S') + ', ' +
+      Math.abs(data.gps.lon).toFixed(6) + '° ' + (data.gps.lon >= 0 ? 'E' : 'W') +
+      '  &nbsp; <a href="https://maps.google.com/?q=' + data.gps.lat + ',' + data.gps.lon + '">Google Maps</a>' +
+      '</div>'
+    : '';
+
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
+    '<title>Metadata — ' + escH(data.filename) + '</title>' +
+    '<style>body{font-family:Arial,sans-serif;margin:36px;color:#202124}' +
+    'h1{font-size:18px;margin-bottom:2px}' +
+    '.sub{font-size:12px;color:#70757a;margin-bottom:20px}' +
+    'a{color:#1a73e8}@media print{body{margin:0}}</style>' +
+    '</head><body>' +
+    '<h1>Metadata: ' + escH(data.filename) + '</h1>' +
+    '<div class="sub">' + escH(data.mime_type) + ' &nbsp;&middot;&nbsp; ' + escH(fmtSize(data.file_size)) + '</div>' +
+    gpsBanner + catHtml + '</body></html>';
+}
+
+function fmtSize(n) {
+  var units = ['B','KB','MB','GB'];
+  var i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i];
+}
+</script>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>
