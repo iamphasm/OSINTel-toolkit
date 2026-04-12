@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Reverse Search — OSIntelligence Toolkit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="imgsearch-page">
+
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+        <a href="/metadata" class="nav-dropdown-item">Metadata Extractor</a>
+        <a href="/imgsearch" class="nav-dropdown-item active">Image Reverse Search</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<div class="imgsearch-body">
+
+  <!-- Input panel -->
+  <div class="irs-input-panel">
+    <div class="irs-tabs">
+      <button class="irs-tab active" id="tab-upload">Upload Image</button>
+      <button class="irs-tab" id="tab-url">From URL</button>
+    </div>
+
+    <div class="irs-tab-panel" id="panel-upload">
+      <div class="irs-dropzone" id="irs-dropzone">
+        <input type="file" id="irs-file-input" class="irs-file-input" accept="image/*">
+        <div class="irs-drop-icon">&#128247;</div>
+        <div class="irs-drop-label">Drag &amp; drop an image, or <span class="irs-drop-link">click to browse</span></div>
+        <div class="irs-drop-hint">JPEG, PNG, TIFF, WebP, HEIC — max 50 MB</div>
+      </div>
+    </div>
+
+    <div class="irs-tab-panel hidden" id="panel-url">
+      <div class="irs-url-row">
+        <input type="url" id="irs-url-input" class="irs-url-input" placeholder="https://example.com/photo.jpg" autocomplete="off">
+        <button id="irs-url-btn" class="irs-go-btn">Search</button>
+      </div>
+      <div class="irs-url-hint">Direct link to an image file</div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="irs-status" id="irs-status" style="display:none">
+    <div class="mini-spin"></div>
+    <span id="irs-status-text">Analysing image...</span>
+  </div>
+
+  <!-- Results -->
+  <div class="irs-results" id="irs-results" style="display:none">
+
+    <div class="irs-layout">
+
+      <!-- Left: preview + info -->
+      <div class="irs-left">
+        <div class="irs-preview-wrap">
+          <img id="irs-preview" class="irs-preview" src="" alt="Preview">
+        </div>
+        <div class="irs-info-card" id="irs-info-card"></div>
+      </div>
+
+      <!-- Right: GPS + search engines -->
+      <div class="irs-right">
+
+        <!-- GPS section -->
+        <div class="irs-gps-section" id="irs-gps-section" style="display:none">
+          <div class="irs-section-title">&#128205; GPS Location Found</div>
+          <div class="irs-gps-coords" id="irs-gps-coords"></div>
+          <div class="irs-map-wrap">
+            <iframe id="irs-map-frame" class="irs-map-frame" frameborder="0"
+              allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+              src=""></iframe>
+          </div>
+          <div class="irs-map-links" id="irs-map-links"></div>
+        </div>
+
+        <!-- Reverse search engines -->
+        <div class="irs-section-title" style="margin-top:16px">&#128269; Reverse Image Search</div>
+        <div class="irs-note" id="irs-note" style="display:none"></div>
+        <div class="irs-engines" id="irs-engines"></div>
+
+        <!-- Actions -->
+        <div class="irs-actions" id="irs-actions">
+          <button class="irs-action-btn irs-project-btn" id="irs-project-btn">Add to Project</button>
+          <button class="irs-action-btn irs-clear-btn" id="irs-clear-btn">Clear</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast hidden" id="toast"></div>
+
+<!-- Right sidebar -->
+<div class="right-sidebar" id="right-sidebar"></div>
+<button class="sidebar-tab" id="sidebar-tab" title="Show sidebar">&#10094;</button>
+
+<script>
+'use strict';
+
+var currentData  = null;
+var currentImgId = null;   // set for uploads (temp server URL)
+var currentUrl   = null;   // set for URL mode
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+document.getElementById('tab-upload').addEventListener('click', function() { switchTab('upload'); });
+document.getElementById('tab-url').addEventListener('click',    function() { switchTab('url'); });
+function switchTab(name) {
+  document.querySelectorAll('.irs-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.irs-tab-panel').forEach(function(p) { p.classList.add('hidden'); });
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('panel-' + name).classList.remove('hidden');
+}
+
+// ── Drop zone ──────────────────────────────────────────────────────────────
+var dropzone  = document.getElementById('irs-dropzone');
+var fileInput = document.getElementById('irs-file-input');
+
+dropzone.addEventListener('click', function(e) { if (e.target !== fileInput) fileInput.click(); });
+dropzone.addEventListener('dragover',  function(e) { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', function()  { dropzone.classList.remove('dragover'); });
+dropzone.addEventListener('drop', function(e) {
+  e.preventDefault(); dropzone.classList.remove('dragover');
+  var f = e.dataTransfer.files[0];
+  if (f) doUpload(f);
+});
+fileInput.addEventListener('change', function() { if (fileInput.files[0]) doUpload(fileInput.files[0]); });
+
+function doUpload(file) {
+  // Show local preview immediately
+  var localUrl = URL.createObjectURL(file);
+  document.getElementById('irs-preview').src = localUrl;
+
+  setLoading('Analysing ' + file.name + '...');
+  var form = new FormData();
+  form.append('file', file);
+  fetch('/api/imgsearch/upload', { method: 'POST', body: form })
+    .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail||'HTTP '+r.status); }); return r.json(); })
+    .then(function(data) {
+      currentImgId = data.img_id;
+      currentUrl   = null;
+      setLoading(false);
+      showResults(data, '/api/imgsearch/temp/' + data.img_id, true);
+    })
+    .catch(function(e) { setLoading(false); showErr(e.message); });
+}
+
+// ── URL mode ───────────────────────────────────────────────────────────────
+document.getElementById('irs-url-btn').addEventListener('click', doUrlSearch);
+document.getElementById('irs-url-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') doUrlSearch(); });
+
+function doUrlSearch() {
+  var url = document.getElementById('irs-url-input').value.trim();
+  if (!url) return;
+  setLoading('Fetching and analysing image...');
+  fetch('/api/imgsearch/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url })
+  })
+  .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail||'HTTP '+r.status); }); return r.json(); })
+  .then(function(data) {
+    currentImgId = null;
+    currentUrl   = url;
+    setLoading(false);
+    document.getElementById('irs-preview').src = url;
+    showResults(data, url, false);
+  })
+  .catch(function(e) { setLoading(false); showErr(e.message); });
+}
+
+// ── Search engine definitions ──────────────────────────────────────────────
+var ENGINES = [
+  { name: 'Google Lens',    icon: '🔍', color: '#4285f4',
+    url: function(u) { return 'https://lens.google.com/uploadbyurl?url=' + encodeURIComponent(u); },
+    uploadPage: 'https://lens.google.com/' },
+  { name: 'Yandex Images', icon: '🔎', color: '#ff0000',
+    url: function(u) { return 'https://yandex.com/images/search?url=' + encodeURIComponent(u) + '&rpt=imageview'; },
+    uploadPage: 'https://yandex.com/images/' },
+  { name: 'Bing Images',   icon: '🔍', color: '#0078d4',
+    url: function(u) { return 'https://www.bing.com/images/search?q=imgurl:' + encodeURIComponent(u) + '&view=detailv2&iss=sbi'; },
+    uploadPage: 'https://www.bing.com/images/search?view=detailv2&iss=sbi' },
+  { name: 'TinEye',        icon: '👁', color: '#c1502e',
+    url: function(u) { return 'https://tineye.com/search?url=' + encodeURIComponent(u); },
+    uploadPage: 'https://tineye.com/' },
+  { name: 'Karma Decay',   icon: '🔴', color: '#ff4500',
+    url: function(u) { return 'https://karmadecay.com/search?q=' + encodeURIComponent(u); },
+    uploadPage: 'https://karmadecay.com/' },
+  { name: 'Baidu Images',  icon: '🔍', color: '#2932e1',
+    url: function(u) { return 'https://image.baidu.com/search/index?tn=baiduimage&word=' + encodeURIComponent(u); },
+    uploadPage: 'https://image.baidu.com/' },
+];
+
+// ── Render results ─────────────────────────────────────────────────────────
+function showResults(data, imgSrc, isUpload) {
+  currentData = data;
+  document.getElementById('irs-results').style.display = '';
+
+  // Preview (for URL mode, set it; upload already set it)
+  if (!isUpload) {
+    document.getElementById('irs-preview').src = imgSrc;
+  }
+
+  // Info card
+  var card = document.getElementById('irs-info-card');
+  card.textContent = '';
+  var rows = [
+    ['File', data.filename],
+    ['Size', data.file_size],
+    ['Format', data.format || '\u2014'],
+    ['Dimensions', data.dimensions || '\u2014'],
+    ['MD5', data.md5],
+  ];
+  rows.forEach(function(r) {
+    var row = document.createElement('div'); row.className = 'irs-info-row';
+    var k = document.createElement('span'); k.className = 'irs-info-key'; k.textContent = r[0];
+    var v = document.createElement('span'); v.className = 'irs-info-val'; v.textContent = r[1];
+    row.appendChild(k); row.appendChild(v);
+    card.appendChild(row);
+  });
+  if (data.exif && data.exif.length) {
+    data.exif.forEach(function(f) {
+      var row = document.createElement('div'); row.className = 'irs-info-row';
+      var k = document.createElement('span'); k.className = 'irs-info-key'; k.textContent = f.key;
+      var v = document.createElement('span'); v.className = 'irs-info-val'; v.textContent = f.value;
+      row.appendChild(k); row.appendChild(v);
+      card.appendChild(row);
+    });
+  }
+
+  // GPS
+  var gpsSection = document.getElementById('irs-gps-section');
+  if (data.gps) {
+    var lat = data.gps.lat, lon = data.gps.lon;
+    var latRef = lat >= 0 ? 'N' : 'S', lonRef = lon >= 0 ? 'E' : 'W';
+    document.getElementById('irs-gps-coords').textContent =
+      Math.abs(lat).toFixed(6) + '\u00b0 ' + latRef + ',  ' + Math.abs(lon).toFixed(6) + '\u00b0 ' + lonRef;
+
+    var mapFrame = document.getElementById('irs-map-frame');
+    mapFrame.src = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
+      (lon-0.01) + '%2C' + (lat-0.01) + '%2C' + (lon+0.01) + '%2C' + (lat+0.01) +
+      '&layer=mapnik&marker=' + lat + '%2C' + lon;
+
+    var mapLinks = document.getElementById('irs-map-links');
+    mapLinks.textContent = '';
+    [
+      ['Google Maps', 'https://maps.google.com/?q=' + lat + ',' + lon],
+      ['OpenStreetMap', 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '&zoom=15'],
+      ['Google Street View', 'https://maps.google.com/?layer=c&cbll=' + lat + ',' + lon],
+    ].forEach(function(lnk) {
+      var a = document.createElement('a');
+      a.href = lnk[1]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = lnk[0]; a.className = 'irs-map-link';
+      mapLinks.appendChild(a);
+    });
+
+    gpsSection.style.display = '';
+  } else {
+    gpsSection.style.display = 'none';
+  }
+
+  // Note for uploads (localhost images can't be fetched by external engines)
+  var noteEl = document.getElementById('irs-note');
+  if (isUpload) {
+    noteEl.textContent = 'Image temporarily hosted at ' + location.origin +
+      '/api/imgsearch/temp/' + data.img_id + ' (30 min). ' +
+      'If this server is not publicly accessible, open each engine and drag the image manually.';
+    noteEl.style.display = '';
+  } else {
+    noteEl.style.display = 'none';
+  }
+
+  // Engine cards
+  var enginesEl = document.getElementById('irs-engines');
+  enginesEl.textContent = '';
+  var searchUrl = isUpload
+    ? location.origin + '/api/imgsearch/temp/' + data.img_id
+    : imgSrc;
+
+  ENGINES.forEach(function(eng) {
+    var card2 = document.createElement('div'); card2.className = 'irs-engine-card';
+
+    var nameEl = document.createElement('span'); nameEl.className = 'irs-engine-name';
+    nameEl.textContent = eng.name;
+
+    var btn = document.createElement('a');
+    btn.className = 'irs-engine-btn';
+    btn.style.background = eng.color;
+    btn.textContent = 'Search';
+    btn.href = eng.url(searchUrl);
+    btn.target = '_blank'; btn.rel = 'noopener noreferrer';
+
+    card2.appendChild(nameEl); card2.appendChild(btn);
+    enginesEl.appendChild(card2);
+  });
+}
+
+// ── Add to Project ─────────────────────────────────────────────────────────
+document.getElementById('irs-project-btn').addEventListener('click', function() {
+  if (!currentData) return;
+  var activeProject = null;
+  try { activeProject = JSON.parse(localStorage.getItem('phasm_project') || 'null'); } catch(e) {}
+  if (!activeProject) {
+    toast('No active project \u2014 open Projects \u2192 Choose Project first.', true); return;
+  }
+
+  var btn = document.getElementById('irs-project-btn');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+
+  var html = buildReportHtml(currentData, currentUrl || (currentImgId ? location.origin + '/api/imgsearch/temp/' + currentImgId : ''));
+  var stem = (currentData.filename || 'image').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+  var sourceRef = new Date().toISOString().slice(0, 10) + '_' + stem;
+
+  fetch('/api/projects/' + activeProject.id + '/file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source_type: 'Image Reverse Search', source_ref: sourceRef, content: html })
+  })
+  .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail||'HTTP '+r.status); }); return r.json(); })
+  .then(function() {
+    btn.disabled = false; btn.textContent = 'Add to Project';
+    toast('Saved to "' + sourceRef + '.html" in "' + activeProject.name + '".');
+  })
+  .catch(function(e) {
+    btn.disabled = false; btn.textContent = 'Add to Project';
+    toast('Export failed: ' + e.message, true);
+  });
+});
+
+// ── Clear ──────────────────────────────────────────────────────────────────
+document.getElementById('irs-clear-btn').addEventListener('click', function() {
+  currentData = currentImgId = currentUrl = null;
+  document.getElementById('irs-results').style.display = 'none';
+  document.getElementById('irs-status').style.display = 'none';
+  document.getElementById('irs-preview').src = '';
+  fileInput.value = '';
+  document.getElementById('irs-url-input').value = '';
+});
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setLoading(msg) {
+  var s = document.getElementById('irs-status');
+  document.getElementById('irs-results').style.display = 'none';
+  if (msg) {
+    document.getElementById('irs-status-text').textContent = msg;
+    s.style.display = 'flex';
+  } else {
+    s.style.display = 'none';
+  }
+}
+function showErr(msg) {
+  var s = document.getElementById('irs-status');
+  s.style.display = 'flex';
+  s.querySelector('.mini-spin').style.display = 'none';
+  document.getElementById('irs-status-text').textContent = 'Error: ' + msg;
+}
+function toast(msg, isErr) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (isErr ? 'err' : 'ok');
+  clearTimeout(t._t);
+  t._t = setTimeout(function() { t.className = 'toast hidden'; }, 3500);
+}
+function escH(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── HTML report builder ────────────────────────────────────────────────────
+function buildReportHtml(data, imgSrc) {
+  var gpsHtml = '';
+  if (data.gps) {
+    var lat = data.gps.lat, lon = data.gps.lon;
+    gpsHtml = '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:12px 16px;margin:16px 0">' +
+      '<strong>&#128205; GPS Coordinates</strong><br>' +
+      Math.abs(lat).toFixed(6) + '&deg; ' + (lat>=0?'N':'S') + ', ' +
+      Math.abs(lon).toFixed(6) + '&deg; ' + (lon>=0?'E':'W') + '<br>' +
+      '<a href="https://maps.google.com/?q=' + lat + ',' + lon + '">Google Maps</a> &nbsp; ' +
+      '<a href="https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '&zoom=15">OpenStreetMap</a> &nbsp; ' +
+      '<a href="https://maps.google.com/?layer=c&cbll=' + lat + ',' + lon + '">Street View</a>' +
+      '</div>';
+  }
+  var exifRows = (data.exif || []).map(function(f) {
+    return '<tr><td style="padding:4px 12px 4px 0;color:#555;font-size:12px;white-space:nowrap">' +
+      escH(f.key) + '</td><td style="padding:4px 0;font-size:12px">' + escH(f.value) + '</td></tr>';
+  }).join('');
+  var engLinks = ENGINES.map(function(eng) {
+    var url = imgSrc ? eng.url(imgSrc) : eng.uploadPage;
+    return '<a href="' + escH(url) + '" style="display:inline-block;margin:4px;padding:6px 14px;background:' +
+      eng.color + ';color:#fff;border-radius:4px;font-size:12px;text-decoration:none">' + escH(eng.name) + '</a>';
+  }).join('');
+  var imgTag = imgSrc ? '<img src="' + escH(imgSrc) + '" style="max-width:100%;max-height:400px;border-radius:6px;display:block;margin-bottom:16px">' : '';
+
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<title>Image Reverse Search \u2014 ' + escH(data.filename) + '</title>' +
+    '<style>body{font-family:Arial,sans-serif;margin:32px;color:#202124}h1{font-size:18px}' +
+    '.sub{color:#70757a;font-size:12px;margin-bottom:20px}a{color:#1a73e8}' +
+    '@media print{body{margin:0}}</style></head><body>' +
+    '<h1>Image Reverse Search: ' + escH(data.filename) + '</h1>' +
+    '<div class="sub">' + escH(data.file_size) + (data.dimensions ? ' &middot; ' + escH(data.dimensions) : '') + ' &middot; MD5: ' + escH(data.md5) + '</div>' +
+    imgTag + gpsHtml +
+    (exifRows ? '<h2 style="font-size:14px;margin-top:20px">EXIF Data</h2><table style="border-collapse:collapse">' + exifRows + '</table>' : '') +
+    '<h2 style="font-size:14px;margin-top:20px">Search Engines</h2><div>' + engLinks + '</div>' +
+    '</body></html>';
+}
+</script>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+</body>
+</html>

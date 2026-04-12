@@ -1,7 +1,23 @@
 # CHANGES — OSIntelligence Toolkit
 
 Developed by Phasm. All notable changes are recorded here, newest first.
-Current version: v1.0.4
+Current version: v1.0.5
+
+---
+
+## v1.0.5
+
+### GEOSINT — Image Reverse Search
+- New page at `/imgsearch` accessible from GEOSINT → Image Reverse Search in all pages
+- Upload image (drag & drop) or provide a direct URL
+- Instant local preview on upload
+- EXIF extraction: camera make/model, date, focal length, aperture, ISO
+- GPS: embedded OpenStreetMap iframe plus Google Maps, OpenStreetMap, and Google Street View links
+- Six reverse image search engines: Google Lens, Yandex Images, Bing Images, TinEye, Karma Decay, Baidu Images
+- Uploaded images served temporarily at `/api/imgsearch/temp/{id}` (30-minute TTL) for URL-based search links
+- Warning shown for uploads when server may not be publicly accessible to external engines
+- Add to Project saves full HTML report under `Image Reverse Search/` folder
+- New API endpoints: `POST /api/imgsearch/upload`, `GET /api/imgsearch/temp/{id}`, `POST /api/imgsearch/url`
 
 ---
 

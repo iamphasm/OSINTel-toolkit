@@ -48,6 +48,17 @@ Extracts embedded metadata from digital files — either by uploading a file or 
 - Export full metadata report as PDF
 - File upload (drag & drop) or remote URL (max 50 MB)
 
+### Image Reverse Search *(GEOSINT)*
+Helps locate the origin or context of an image using reverse image search engines, combined with EXIF GPS extraction.
+
+- Upload an image or provide a direct URL
+- Immediate image preview
+- Extracts EXIF data: camera, date, focal length, aperture, ISO
+- GPS extraction with an embedded OpenStreetMap, plus links to Google Maps, OpenStreetMap, and Google Street View
+- One-click search buttons for six engines: Google Lens, Yandex Images, Bing Images, TinEye, Karma Decay, Baidu Images
+- Uploaded images are temporarily served from the local server for 30 minutes (URL-based search links)
+- Add to Project saves a full HTML report with image, GPS map links, EXIF data, and search engine links
+
 ### ShadowMap *(GEOSINT)*
 An embedded viewer for [ShadowMap](https://app.shadowmap.org/), a geospatial tool for analysing sun position, shadows, and lighting conditions at any location and time. Useful for verifying the time or date of photos based on shadow direction.
 

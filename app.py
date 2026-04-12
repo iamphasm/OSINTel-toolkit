@@ -18,6 +18,8 @@ from urllib.parse import urljoin, urlparse
 import io
 import mimetypes
 import struct
+import uuid
+import hashlib
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
@@ -984,6 +986,109 @@ async def api_metadata_url(body: MetadataUrlBody):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+# ─── Image reverse search ─────────────────────────────────────────────────────
+
+# In-memory temp image store: id -> {bytes, content_type, filename, expires}
+_IMG_STORE: dict = {}
+_IMG_TTL = 1800  # 30 minutes
+
+def _img_store_put(data: bytes, content_type: str, filename: str) -> str:
+    img_id = uuid.uuid4().hex
+    _IMG_STORE[img_id] = {
+        "data": data, "content_type": content_type,
+        "filename": filename, "expires": _time.time() + _IMG_TTL,
+    }
+    now = _time.time()
+    for k in list(_IMG_STORE.keys()):
+        if _IMG_STORE[k]["expires"] < now:
+            del _IMG_STORE[k]
+    return img_id
+
+class ImgSearchUrlBody(BaseModel):
+    url: str
+
+def _extract_image_info(data: bytes, filename: str) -> dict:
+    info: dict = {
+        "filename": filename,
+        "file_size": _fmt_size(len(data)),
+        "md5": hashlib.md5(data).hexdigest(),
+        "dimensions": None,
+        "format": None,
+        "gps": None,
+        "exif": [],
+    }
+    try:
+        img = Image.open(io.BytesIO(data))
+        info["dimensions"] = f"{img.width} \u00d7 {img.height} px"
+        info["format"] = img.format
+        exif_raw = img._getexif() if hasattr(img, "_getexif") else None
+        if exif_raw:
+            WANT = {"Make","Model","DateTime","DateTimeOriginal","Software",
+                    "FNumber","ExposureTime","ISOSpeedRatings","FocalLength"}
+            for tag_id, val in exif_raw.items():
+                tag = TAGS.get(tag_id, str(tag_id))
+                if tag == "GPSInfo":
+                    gps_raw = {GPSTAGS.get(gid, str(gid)): gval for gid, gval in val.items()}
+                    lat = _dms_to_decimal(gps_raw.get("GPSLatitude"), gps_raw.get("GPSLatitudeRef",""))
+                    lon = _dms_to_decimal(gps_raw.get("GPSLongitude"), gps_raw.get("GPSLongitudeRef",""))
+                    if lat is not None and lon is not None:
+                        info["gps"] = {"lat": lat, "lon": lon,
+                                       "lat_ref": gps_raw.get("GPSLatitudeRef",""),
+                                       "lon_ref": gps_raw.get("GPSLongitudeRef","")}
+                elif tag in WANT:
+                    info["exif"].append({"key": tag, "value": _fmt_exif_value(tag, val)})
+    except Exception:
+        pass
+    return info
+
+
+@app.post("/api/imgsearch/upload")
+async def imgsearch_upload(file: UploadFile = File(...)):
+    data = await file.read(METADATA_MAX_BYTES + 1)
+    if len(data) > METADATA_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 50 MB limit")
+    ct = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "image/jpeg"
+    img_id = _img_store_put(data, ct, file.filename or "upload")
+    info = _extract_image_info(data, file.filename or "upload")
+    info["img_id"] = img_id
+    return info
+
+
+@app.get("/api/imgsearch/temp/{img_id}")
+async def imgsearch_temp(img_id: str):
+    from fastapi.responses import Response
+    entry = _IMG_STORE.get(img_id)
+    if not entry or entry["expires"] < _time.time():
+        raise HTTPException(status_code=404, detail="Image expired or not found")
+    return Response(content=entry["data"], media_type=entry["content_type"])
+
+
+@app.post("/api/imgsearch/url")
+async def imgsearch_url_endpoint(body: ImgSearchUrlBody):
+    parsed = urlparse(body.url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http/https URLs are supported")
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            async with client.stream("GET", body.url) as resp:
+                resp.raise_for_status()
+                chunks, total = [], 0
+                async for chunk in resp.aiter_bytes(65536):
+                    total += len(chunk)
+                    if total > METADATA_MAX_BYTES:
+                        raise HTTPException(status_code=413, detail="Remote file exceeds 50 MB limit")
+                    chunks.append(chunk)
+                data = b"".join(chunks)
+        filename = parsed.path.rsplit("/", 1)[-1] or "image"
+        info = _extract_image_info(data, filename)
+        info["source_url"] = body.url
+        return info
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 # ─── Frontend routes ──────────────────────────────────────────────────────────
 
 @app.get("/", response_class=FileResponse)
@@ -1019,3 +1124,8 @@ async def shadowmap_page():
 @app.get("/metadata", response_class=FileResponse)
 async def metadata_page():
     return FileResponse("static/metadata.html")
+
+
+@app.get("/imgsearch", response_class=FileResponse)
+async def imgsearch_page():
+    return FileResponse("static/imgsearch.html")
