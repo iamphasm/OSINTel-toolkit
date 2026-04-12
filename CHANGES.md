@@ -1,7 +1,16 @@
 # CHANGES — OSIntelligence Toolkit
 
 Developed by Phasm. All notable changes are recorded here, newest first.
-Current version: v1.0.2
+Current version: v1.0.3
+
+---
+
+## v1.0.2
+
+### Metadata Extractor — Add to Project
+- Added blue "Add to Project" button in the results toolbar
+- Saves the metadata report as an HTML file in the active project under `Metadata Extractor/YYYY-MM-DD_filename.html`
+- Opens in the iframe viewer with Print to PDF when clicked from the project sidebar
 
 ---
 

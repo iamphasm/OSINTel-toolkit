@@ -2063,6 +2063,8 @@ body.sidebar-open .results-subheader { margin-right: 16.67%; }
 .meta-action-btn:hover { background: #f1f3f4; }
 .meta-pdf-btn { color: #188038; border-color: #188038; }
 .meta-pdf-btn:hover { background: #e6f4ea; }
+.meta-project-btn { color: var(--blue); border-color: var(--blue); }
+.meta-project-btn:hover { background: #e8f0fe; }
 .meta-clear-btn { color: #d93025; border-color: #d93025; }
 .meta-clear-btn:hover { background: #fce8e6; }
 

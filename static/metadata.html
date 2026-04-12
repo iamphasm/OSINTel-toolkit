@@ -81,6 +81,7 @@
       <div class="meta-results-title" id="meta-results-title"></div>
       <div class="meta-results-actions">
         <button class="meta-action-btn meta-pdf-btn" id="meta-pdf-btn">Export PDF</button>
+        <button class="meta-action-btn meta-project-btn" id="meta-project-btn">Add to Project</button>
         <button class="meta-action-btn meta-clear-btn" id="meta-clear-btn">Clear</button>
       </div>
     </div>
@@ -272,6 +273,19 @@ document.getElementById('meta-clear-btn').addEventListener('click', function() {
   document.querySelector('#meta-status .mini-spin').style.display = '';
   fileInput.value = '';
   document.getElementById('meta-url-input').value = '';
+});
+
+// ── Add to Project ─────────────────────────────────────────────────────────
+document.getElementById('meta-project-btn').addEventListener('click', function() {
+  if (!currentData) return;
+  if (!window.phasmExportHtmlToProject) {
+    alert('Open the Projects sidebar first via the Projects menu in the top bar.');
+    return;
+  }
+  var html = buildMetaPdfHtml(currentData);
+  var stem = currentData.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+  var sourceRef = new Date().toISOString().slice(0, 10) + '_' + stem;
+  window.phasmExportHtmlToProject(html, 'Metadata Extractor', sourceRef);
 });
 
 // ── PDF export ─────────────────────────────────────────────────────────────
