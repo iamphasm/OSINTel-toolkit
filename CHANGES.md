@@ -1,7 +1,20 @@
 # CHANGES — OSIntelligence Toolkit
 
 Developed by Phasm. All notable changes are recorded here, newest first.
-Current version: v1.0.5
+Current version: v1.0.6
+
+---
+
+## v1.0.6
+
+### Resources — link library
+- New top-level RESOURCES link added to the navigation bar on all pages
+- New page at `/resources` — a personal link library grouped by category
+- "Add Resource" button opens an overlay with Title, Link, and Category fields
+- Category dropdown lists all existing categories; selecting "Create a new category" reveals an inline text input
+- Links are displayed sorted by category, each with a delete button
+- New API endpoints: `GET /api/resources`, `GET /api/resources/categories`, `POST /api/resources`, `DELETE /api/resources/{id}`
+- New `resources` table in SQLite database
 
 ---
 

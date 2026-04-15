@@ -106,6 +106,16 @@ CREATE TABLE IF NOT EXISTS project_data (
 );
 """
 
+CREATE_RESOURCES_TABLE = """
+CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'Uncategorized',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
 CREATE_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(message_date DESC);
@@ -132,6 +142,7 @@ async def init_db():
         await db.execute(CREATE_TRANSLATIONS_TABLE)
         await db.execute(CREATE_PROJECTS_TABLE)
         await db.execute(CREATE_PROJECT_DATA_TABLE)
+        await db.execute(CREATE_RESOURCES_TABLE)
         await db.execute(CREATE_FTS_TABLE)
         for trigger in CREATE_FTS_TRIGGERS.strip().split(";\n\n"):
             t = trigger.strip()

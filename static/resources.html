@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSIntelligence Toolkit — Resources</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ── App header ──────────────────────────────────────────────────────────── -->
+<header class="app-header">
+  <nav class="app-nav">
+    <div class="nav-group" id="nav-tools-group">
+      <button class="nav-group-btn" aria-expanded="false">TOOLS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/" class="nav-dropdown-item">Telegram Scraper</a>
+        <a href="/weblinks" class="nav-dropdown-item">Web Link Scraper</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">GEOSINT <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="/shadowmap" class="nav-dropdown-item">ShadowMap</a>
+        <a href="/metadata" class="nav-dropdown-item">Metadata Extractor</a>
+        <a href="/imgsearch" class="nav-dropdown-item">Image Reverse Search</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <button class="nav-group-btn" aria-expanded="false">PROJECTS <span class="nav-caret">&#9662;</span></button>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('create');return false;">Create Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('choose');return false;">Choose Project</a>
+        <a href="#" class="nav-dropdown-item" onclick="window.phasmSidebar&&window.phasmSidebar.open('view');return false;">View Project</a>
+      </div>
+    </div>
+    <a href="/resources" class="nav-direct-link active">RESOURCES</a>
+  </nav>
+  <a href="/" class="app-logo">
+    <img src="/static/phasm-logo.png" alt="OSIntelligence Toolkit">
+  </a>
+</header>
+
+<!-- ── Resources page ──────────────────────────────────────────────────────── -->
+<div class="res-page">
+  <div class="res-toolbar">
+    <h1 class="res-title">Resources</h1>
+    <button class="res-add-btn" id="res-add-btn">+ Add Resource</button>
+  </div>
+
+  <div id="res-library" class="res-library"></div>
+
+  <div id="res-empty" class="res-empty" style="display:none">
+    No resources yet. Click <strong>+ Add Resource</strong> to add your first link.
+  </div>
+</div>
+
+<!-- ── Add Resource overlay ─────────────────────────────────────────────────── -->
+<div class="res-overlay" id="res-overlay" style="display:none">
+  <div class="res-modal">
+    <div class="res-modal-hdr">
+      <span class="res-modal-title">Add Resource</span>
+      <button class="res-modal-close" id="res-modal-close">&#10005;</button>
+    </div>
+    <div class="res-modal-body">
+      <label class="res-label">Title</label>
+      <input class="res-input" id="res-field-title" type="text" placeholder="Resource title" />
+
+      <label class="res-label">Link</label>
+      <input class="res-input" id="res-field-url" type="url" placeholder="https://example.com" />
+
+      <label class="res-label">Category</label>
+      <select class="res-input res-select" id="res-field-cat">
+        <option value="__new__">— Create a new category —</option>
+      </select>
+      <div id="res-new-cat-wrap" style="display:none; margin-top:8px;">
+        <input class="res-input" id="res-field-newcat" type="text" placeholder="New category name" />
+      </div>
+
+      <div id="res-form-err" class="res-form-err" style="display:none"></div>
+    </div>
+    <div class="res-modal-footer">
+      <button class="res-btn res-btn-cancel" id="res-btn-cancel">Cancel</button>
+      <button class="res-btn res-btn-save" id="res-btn-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="res-toast" class="res-toast" style="display:none"></div>
+
+<script src="/static/nav.js"></script>
+<script src="/static/sidebar.js"></script>
+<script>
+(function () {
+
+  function toast(msg, isErr) {
+    var t = document.getElementById('res-toast');
+    t.textContent = msg;
+    t.className = 'res-toast ' + (isErr ? 'err' : 'ok');
+    t.style.display = 'block';
+    clearTimeout(t._tmr);
+    t._tmr = setTimeout(function () { t.style.display = 'none'; }, 3500);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  function render(data) {
+    var library = document.getElementById('res-library');
+    var empty = document.getElementById('res-empty');
+    library.textContent = '';
+
+    if (!data.length) {
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+
+    // Group by category
+    var groups = {};
+    var order = [];
+    data.forEach(function (r) {
+      var cat = r.category || 'Uncategorized';
+      if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+      groups[cat].push(r);
+    });
+    order.sort(function (a, b) { return a.localeCompare(b); });
+
+    order.forEach(function (cat) {
+      var groupEl = document.createElement('div');
+      groupEl.className = 'res-group';
+
+      var titleEl = document.createElement('div');
+      titleEl.className = 'res-group-title';
+      titleEl.textContent = cat;
+      groupEl.appendChild(titleEl);
+
+      var listEl = document.createElement('div');
+      listEl.className = 'res-group-list';
+
+      groups[cat].forEach(function (r) {
+        var item = document.createElement('div');
+        item.className = 'res-item';
+        item.dataset.id = r.id;
+
+        var body = document.createElement('div');
+        body.className = 'res-item-body';
+
+        var link = document.createElement('a');
+        link.className = 'res-item-title';
+        // Only allow http/https URLs for safety
+        var safeUrl = /^https?:\/\//i.test(r.url) ? r.url : '#';
+        link.href = safeUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = r.title;
+        body.appendChild(link);
+
+        var urlSpan = document.createElement('span');
+        urlSpan.className = 'res-item-url';
+        urlSpan.textContent = r.url;
+        body.appendChild(urlSpan);
+
+        item.appendChild(body);
+
+        var delBtn = document.createElement('button');
+        delBtn.className = 'res-item-del';
+        delBtn.title = 'Delete';
+        delBtn.textContent = '\uD83D\uDDD1';
+        delBtn.addEventListener('click', function () { deleteResource(r.id); });
+        item.appendChild(delBtn);
+
+        listEl.appendChild(item);
+      });
+
+      groupEl.appendChild(listEl);
+      library.appendChild(groupEl);
+    });
+  }
+
+  // ── Load ────────────────────────────────────────────────────────────────────
+
+  function loadResources() {
+    fetch('/api/resources')
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () { toast('Failed to load resources', true); });
+  }
+
+  function loadCategories(selectEl) {
+    fetch('/api/resources/categories')
+      .then(function (r) { return r.json(); })
+      .then(function (cats) {
+        selectEl.textContent = '';
+        cats.forEach(function (cat) {
+          var opt = document.createElement('option');
+          opt.value = cat;
+          opt.textContent = cat;
+          selectEl.appendChild(opt);
+        });
+        var newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '\u2014 Create a new category \u2014';
+        selectEl.appendChild(newOpt);
+      })
+      .catch(function () {
+        selectEl.textContent = '';
+        var newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '\u2014 Create a new category \u2014';
+        selectEl.appendChild(newOpt);
+      });
+  }
+
+  // ── Delete ──────────────────────────────────────────────────────────────────
+
+  function deleteResource(id) {
+    if (!confirm('Delete this resource?')) return;
+    fetch('/api/resources/' + id, { method: 'DELETE' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Delete failed');
+        toast('Deleted');
+        loadResources();
+      })
+      .catch(function () { toast('Delete failed', true); });
+  }
+
+  // ── Modal ───────────────────────────────────────────────────────────────────
+
+  var overlay = document.getElementById('res-overlay');
+  var catSelect = document.getElementById('res-field-cat');
+  var newCatWrap = document.getElementById('res-new-cat-wrap');
+  var newCatInput = document.getElementById('res-field-newcat');
+
+  catSelect.addEventListener('change', function () {
+    newCatWrap.style.display = catSelect.value === '__new__' ? '' : 'none';
+    if (catSelect.value === '__new__') newCatInput.focus();
+  });
+
+  function openModal() {
+    document.getElementById('res-field-title').value = '';
+    document.getElementById('res-field-url').value = '';
+    newCatInput.value = '';
+    newCatWrap.style.display = 'none';
+    document.getElementById('res-form-err').style.display = 'none';
+    loadCategories(catSelect);
+    overlay.style.display = 'flex';
+    setTimeout(function () { document.getElementById('res-field-title').focus(); }, 50);
+  }
+
+  function closeModal() {
+    overlay.style.display = 'none';
+  }
+
+  document.getElementById('res-add-btn').addEventListener('click', openModal);
+  document.getElementById('res-modal-close').addEventListener('click', closeModal);
+  document.getElementById('res-btn-cancel').addEventListener('click', closeModal);
+
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeModal();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && overlay.style.display !== 'none') closeModal();
+  });
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+
+  document.getElementById('res-btn-save').addEventListener('click', saveResource);
+
+  function saveResource() {
+    var title = document.getElementById('res-field-title').value.trim();
+    var url = document.getElementById('res-field-url').value.trim();
+    var category = catSelect.value === '__new__'
+      ? newCatInput.value.trim()
+      : catSelect.value;
+
+    var errEl = document.getElementById('res-form-err');
+    function showErr(msg) { errEl.textContent = msg; errEl.style.display = ''; }
+
+    if (!title) { showErr('Title is required'); return; }
+    if (!url) { showErr('Link is required'); return; }
+    if (catSelect.value === '__new__' && !category) { showErr('Category name is required'); return; }
+    errEl.style.display = 'none';
+
+    var saveBtn = document.getElementById('res-btn-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving\u2026';
+
+    fetch('/api/resources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title, url: url, category: category || 'Uncategorized' })
+    })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || 'Save failed'); });
+        return r.json();
+      })
+      .then(function () {
+        closeModal();
+        toast('Resource saved');
+        loadResources();
+      })
+      .catch(function (e) { showErr(e.message); })
+      .finally(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      });
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  loadResources();
+})();
+</script>
+</body>
+</html>

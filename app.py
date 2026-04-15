@@ -107,6 +107,11 @@ class ProjectDataBody(BaseModel):
     source_ref: str = ""
     content: str
 
+class ResourceBody(BaseModel):
+    title: str
+    url: str
+    category: str = "Uncategorized"
+
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 
@@ -1089,6 +1094,74 @@ async def imgsearch_url_endpoint(body: ImgSearchUrlBody):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+# ─── Resources endpoints ─────────────────────────────────────────────────────
+
+@app.get("/api/resources")
+async def api_list_resources():
+    db = await get_db()
+    try:
+        cur = await db.execute(
+            "SELECT id, title, url, category, created_at FROM resources ORDER BY category COLLATE NOCASE, created_at DESC"
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+@app.get("/api/resources/categories")
+async def api_list_categories():
+    db = await get_db()
+    try:
+        cur = await db.execute(
+            "SELECT DISTINCT category FROM resources ORDER BY category COLLATE NOCASE"
+        )
+        rows = await cur.fetchall()
+        return [r["category"] for r in rows]
+    finally:
+        await db.close()
+
+
+@app.post("/api/resources")
+async def api_create_resource(body: ResourceBody):
+    title = body.title.strip()
+    url = body.url.strip()
+    category = body.category.strip() or "Uncategorized"
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+    db = await get_db()
+    try:
+        cur = await db.execute(
+            "INSERT INTO resources (title, url, category) VALUES (?, ?, ?)",
+            (title, url, category),
+        )
+        await db.commit()
+        resource_id = cur.lastrowid
+        cur2 = await db.execute(
+            "SELECT id, title, url, category, created_at FROM resources WHERE id = ?",
+            (resource_id,),
+        )
+        row = await cur2.fetchone()
+        return dict(row)
+    finally:
+        await db.close()
+
+
+@app.delete("/api/resources/{resource_id}")
+async def api_delete_resource(resource_id: int):
+    db = await get_db()
+    try:
+        cur = await db.execute("DELETE FROM resources WHERE id = ?", (resource_id,))
+        await db.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Resource not found")
+        return {"deleted": resource_id}
+    finally:
+        await db.close()
+
+
 # ─── Frontend routes ──────────────────────────────────────────────────────────
 
 @app.get("/", response_class=FileResponse)
@@ -1124,6 +1197,11 @@ async def shadowmap_page():
 @app.get("/metadata", response_class=FileResponse)
 async def metadata_page():
     return FileResponse("static/metadata.html")
+
+
+@app.get("/resources", response_class=FileResponse)
+async def resources_page():
+    return FileResponse("static/resources.html")
 
 
 @app.get("/imgsearch", response_class=FileResponse)

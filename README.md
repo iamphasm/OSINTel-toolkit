@@ -59,6 +59,15 @@ Helps locate the origin or context of an image using reverse image search engine
 - Uploaded images are temporarily served from the local server for 30 minutes (URL-based search links)
 - Add to Project saves a full HTML report with image, GPS map links, EXIF data, and search engine links
 
+### Resources
+A personal link library accessible from every page via the top navigation bar.
+
+- Add any URL with a title and category
+- Categories are created on the fly — type a new name when adding the first link in that category
+- Links are grouped and sorted by category
+- Delete individual links at any time
+- Persisted to the local database
+
 ### ShadowMap *(GEOSINT)*
 An embedded viewer for [ShadowMap](https://app.shadowmap.org/), a geospatial tool for analysing sun position, shadows, and lighting conditions at any location and time. Useful for verifying the time or date of photos based on shadow direction.
 
