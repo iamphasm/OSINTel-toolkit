@@ -224,28 +224,28 @@
   }
 
   function loadCategories(selectEl) {
+    function afterLoad(cats) {
+      selectEl.textContent = '';
+      cats.forEach(function (cat) {
+        var opt = document.createElement('option');
+        opt.value = cat;
+        opt.textContent = cat;
+        selectEl.appendChild(opt);
+      });
+      var newOpt = document.createElement('option');
+      newOpt.value = '__new__';
+      newOpt.textContent = '\u2014 Create a new category \u2014';
+      selectEl.appendChild(newOpt);
+      // No existing categories: __new__ is auto-selected but change event won't fire
+      if (cats.length === 0) {
+        newCatWrap.style.display = 'block';
+        setTimeout(function () { newCatInput.focus(); }, 60);
+      }
+    }
     fetch('/api/resources/categories')
       .then(function (r) { return r.json(); })
-      .then(function (cats) {
-        selectEl.textContent = '';
-        cats.forEach(function (cat) {
-          var opt = document.createElement('option');
-          opt.value = cat;
-          opt.textContent = cat;
-          selectEl.appendChild(opt);
-        });
-        var newOpt = document.createElement('option');
-        newOpt.value = '__new__';
-        newOpt.textContent = '\u2014 Create a new category \u2014';
-        selectEl.appendChild(newOpt);
-      })
-      .catch(function () {
-        selectEl.textContent = '';
-        var newOpt = document.createElement('option');
-        newOpt.value = '__new__';
-        newOpt.textContent = '\u2014 Create a new category \u2014';
-        selectEl.appendChild(newOpt);
-      });
+      .then(afterLoad)
+      .catch(function () { afterLoad([]); });
   }
 
   // ── Delete ──────────────────────────────────────────────────────────────────
