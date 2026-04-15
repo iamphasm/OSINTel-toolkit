@@ -1,7 +1,7 @@
-# CHANGES — OSIntelligence Toolkit
+# CHANGES — OSINTel-toolkit
 
 Developed by Phasm. All notable changes are recorded here, newest first.
-Current version: v1.0.8
+Current version: v1.0.9
 
 ---
 

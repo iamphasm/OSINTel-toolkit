@@ -1,8 +1,31 @@
-# OSIntelligence Toolkit
+```
+ ▄██████▄     ▄████████  ▄█  ███▄▄▄▄       ███        ▄████████  ▄█       
+███    ███   ███    ███ ███  ███▀▀▀██▄ ▀█████████▄   ███    ███ ███       
+███    ███   ███    █▀  ███▌ ███   ███    ▀███▀▀██   ███    █▀  ███       
+███    ███   ███        ███▌ ███   ███     ███   ▀  ▄███▄▄▄     ███       
+███    ███ ▀███████████ ███▌ ███   ███     ███     ▀▀███▀▀▀     ███       
+███    ███          ███ ███  ███   ███     ███       ███    █▄  ███       
+███    ███    ▄█    ███ ███  ███   ███     ███       ███    ███ ███▌    ▄ 
+ ▀██████▀   ▄████████▀  █▀    ▀█   █▀     ▄████▀     ██████████ █████▄▄██ 
+                                                                ▀         
+    ███      ▄██████▄   ▄██████▄   ▄█          ▄█   ▄█▄  ▄█      ███      
+▀█████████▄ ███    ███ ███    ███ ███         ███ ▄███▀ ███  ▀█████████▄  
+   ▀███▀▀██ ███    ███ ███    ███ ███         ███▐██▀   ███▌    ▀███▀▀██  
+    ███   ▀ ███    ███ ███    ███ ███        ▄█████▀    ███▌     ███   ▀  
+    ███     ███    ███ ███    ███ ███       ▀▀█████▄    ███▌     ███      
+    ███     ███    ███ ███    ███ ███         ███▐██▄   ███      ███      
+    ███     ███    ███ ███    ███ ███▌    ▄   ███ ▀███▄ ███      ███      
+   ▄████▀    ▀██████▀   ▀██████▀  █████▄▄██   ███   ▀█▀ █▀      ▄████▀    
+                                  ▀           ▀                           
+--------------------------------------------------------------------------------------
+                   Developed by: Iam Phasm (https://github.com/iamphasm/)
+```
+
+# OSINTel-toolkit
 
 **Developed by [Phasm](https://phasm.io)**
 
-OSIntelligence Toolkit is a self-hosted open-source intelligence (OSINT) web application. It provides a suite of tools for collecting, searching, and exporting data from public sources. The interface runs entirely in the browser against a local FastAPI backend with a SQLite database.
+OSINTel-toolkit is a self-hosted open-source intelligence (OSINT) web application. It provides a suite of tools for collecting, searching, and exporting data from public sources. The interface runs entirely in the browser against a local FastAPI backend with a SQLite database.
 
 ---
 
@@ -96,8 +119,8 @@ A persistent project management sidebar available on all pages. Projects act as 
 ### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
-cd telegramscraper
+git clone https://github.com/iamphasm/osintelligence.git
+cd osintelligence
 ```
 
 ### 2. Create a virtual environment
@@ -155,7 +178,7 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ```bash
 # crontab -e
-0 * * * * cd /path/to/telegramscraper && source .venv/bin/activate && python scraper.py scrape
+0 * * * * cd /path/to/osintelligence && source .venv/bin/activate && python scraper.py scrape
 ```
 
 ---
@@ -163,9 +186,9 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 ## Project structure
 
 ```
-telegramscraper/
+osintelligence/
 ├── app.py              FastAPI server, all API endpoints
-├── database.py         SQLite schema (FTS5, projects, project_data)
+├── database.py         SQLite schema (FTS5, projects, project_data, resources)
 ├── scraper.py          Telethon scraper CLI
 ├── translate.py        Google Translate wrapper
 ├── static/
@@ -174,6 +197,9 @@ telegramscraper/
 │   ├── channels.html   Channel browser
 │   ├── results.html    Search results
 │   ├── weblinks.html   Web Link Scraper
+│   ├── metadata.html   Metadata Extractor
+│   ├── imgsearch.html  Image Reverse Search
+│   ├── resources.html  Resources link library
 │   ├── shadowmap.html  ShadowMap GEOSINT viewer
 │   ├── nav.js          Shared top navigation (dropdown menus)
 │   ├── sidebar.js      Projects sidebar + export functions
@@ -206,3 +232,7 @@ telegramscraper/
 | `POST` | `/api/projects/{id}/file` | Upsert a file in a project (append if exists) |
 | `PUT`  | `/api/projects/{id}/data/{data_id}` | Update file content |
 | `DELETE` | `/api/projects/{id}/data/{data_id}` | Delete a file from a project |
+| `GET`  | `/api/resources` | List all resources |
+| `GET`  | `/api/resources/categories` | List distinct categories |
+| `POST` | `/api/resources` | Add a resource |
+| `DELETE` | `/api/resources/{id}` | Delete a resource |
